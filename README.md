@@ -31,6 +31,7 @@ In addition to storage savings with the `.chd` format, the goal was to simplify 
   - detailed `chdman` log with probable failure diagnosis
   - `Open log` button for a separate log window (useful on small screens)
   - completion modal/alert with default Windows sound
+- Pre-conversion size estimate (current size vs estimated CHD size and estimated savings).
 - Configurable output:
   - same folder as source ROM (default)
   - custom output folder
@@ -155,3 +156,4 @@ To force 7-Zip refresh during build:
 ## License
 
 This project is distributed under a **non-commercial** license. Commercial use and code commercialization are prohibited without prior author permission. See [LICENSE](LICENSE).
+

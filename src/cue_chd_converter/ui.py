@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 try:
     import winsound  # type: ignore
-except ImportErrorr:
+except ImportError:
     winsound = None  # type: ignore
 
 from cue_chd_converter.archive_utils import (
@@ -23,6 +23,7 @@ from cue_chd_converter.models import CueGame, IgnoredEntry
 from cue_chd_converter.paths import resolve_chdman_path
 from cue_chd_converter.scanner import scan_roms
 from cue_chd_converter.settings import AppSettings, SettingsManager
+from cue_chd_converter.size_estimator import estimate_conversion_size, format_estimate_summary
 
 
 WorkerEvent = Tuple[object, ...]
@@ -47,6 +48,7 @@ class MainWindow(tk.Tk):
         self.source_path_var = tk.StringVar(value=self.settings.last_source_path)
         self.destination_path_var = tk.StringVar(value=self.settings.destination_path)
         self.summary_var = tk.StringVar(value="No source selected.")
+        self.estimate_var = tk.StringVar(value="Estimate: load ROMs to preview space savings.")
         self.progress_var = tk.DoubleVar(value=0.0)
         self.progress_text_var = tk.StringVar(value="Waiting for conversion...")
         self.same_folder_var = tk.BooleanVar(value=self.settings.same_folder)
@@ -134,7 +136,7 @@ class MainWindow(tk.Tk):
 
         self.same_folder_check = ttk.Checkbutton(
             destination_frame,
-            text="Save in the ROM''s source folder",
+            text="Save in the ROM's source folder",
             variable=self.same_folder_var,
             command=self._on_same_folder_toggle,
         )
@@ -213,6 +215,8 @@ class MainWindow(tk.Tk):
         summary_frame.pack(fill=tk.X, expand=False, pady=(8, 0))
         self.summary_label = tk.Label(summary_frame, textvariable=self.summary_var, fg="#8E0000", anchor="w")
         self.summary_label.pack(anchor="w", fill=tk.X)
+        self.estimate_label = tk.Label(summary_frame, textvariable=self.estimate_var, fg="#004A99", anchor="w")
+        self.estimate_label.pack(anchor="w", fill=tk.X, pady=(2, 0))
 
         actions_frame = ttk.Frame(root)
         actions_frame.pack(fill=tk.X, expand=False, pady=(8, 0))
@@ -294,6 +298,7 @@ class MainWindow(tk.Tk):
         self._save_settings()
 
     def _on_extract_archives_toggle(self) -> None:
+        self._refresh_overall_estimate_preview()
         self._save_settings()
 
     def _on_overwrite_toggle(self) -> None:
@@ -382,6 +387,7 @@ class MainWindow(tk.Tk):
         self._set_summary(self.summary_var.get(), color="#003B8E")
         self._log("Loaded source: {0}".format(self.source_path))
         self._log("Compatible: {0} | Ignored: {1}".format(compatible_count, ignored_count))
+        self._refresh_overall_estimate_preview()
         self._save_settings()
 
     def _populate_compatible(self) -> None:
@@ -482,6 +488,13 @@ class MainWindow(tk.Tk):
                 return
             destination_root = Path(destination_text)
             destination_root.mkdir(parents=True, exist_ok=True)
+
+        self._update_estimate_for_scope(
+            scope_label="current task",
+            games=games,
+            archive_paths=archive_paths,
+            write_log=True,
+        )
 
         overwrite = self.overwrite_var.get()
         self.cancel_event.clear()
@@ -853,6 +866,51 @@ class MainWindow(tk.Tk):
         except tk.TclError:
             pass
 
+    def _set_estimate(self, text: str, color: str) -> None:
+        self.estimate_var.set(text)
+        try:
+            self.estimate_label.configure(fg=color)
+        except tk.TclError:
+            pass
+
+    def _refresh_overall_estimate_preview(self) -> None:
+        if not self.compatible_games:
+            self._set_estimate("Estimate: no compatible items to analyze.", color="#6F6F6F")
+            return
+
+        include_archives = self.extract_archives_var.get()
+        if self.source_path and self.source_path.is_file() and is_supported_archive(self.source_path):
+            include_archives = True
+
+        cue_games, archive_paths = self._split_conversion_sources(
+            self.compatible_games,
+            include_archives=include_archives,
+        )
+        self._update_estimate_for_scope(
+            scope_label="all compatible items",
+            games=cue_games,
+            archive_paths=archive_paths,
+            write_log=False,
+        )
+
+    def _update_estimate_for_scope(
+        self,
+        scope_label: str,
+        games: Sequence[CueGame],
+        archive_paths: Sequence[Path],
+        write_log: bool,
+    ) -> None:
+        estimate = estimate_conversion_size(games=games, archive_paths=archive_paths)
+        contains_archives = len(archive_paths) > 0
+        estimate_text = format_estimate_summary(
+            estimate=estimate,
+            scope_label=scope_label,
+            contains_archives=contains_archives,
+        )
+        self._set_estimate(estimate_text, color="#004A99")
+        if write_log:
+            self._log(estimate_text)
+
     def _play_system_sound(self, kind: str) -> None:
         if winsound is not None:
             if kind == "warning":
@@ -914,7 +972,7 @@ class MainWindow(tk.Tk):
             width_str, height_str = size_part.split("x", 1)
             saved_w = int(width_str)
             saved_h = int(height_str)
-        except (ValueErrorr, TypeErrorr):
+        except (ValueError, TypeError):
             return
 
         screen_w = self.winfo_screenwidth()
@@ -1066,6 +1124,11 @@ class MainWindow(tk.Tk):
 def run_app() -> None:
     app = MainWindow()
     app.mainloop()
+
+
+
+
+
 
 
 
