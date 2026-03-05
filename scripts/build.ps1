@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$PythonExe = "python",
     [string]$AppName = "CueChdConverter",
@@ -11,7 +11,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if (-not $PSScriptRoot) {
-    throw "Não foi possível resolver o diretório do script."
+    throw "Could not resolve the script directory."
 }
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -25,39 +25,39 @@ function Invoke-ExternalCommand {
 
     & $Exe @Args
     if ($LASTEXITCODE -ne 0) {
-        throw "Comando falhou (exit code $LASTEXITCODE): $Exe $($Args -join ' ')"
+        throw "Command failed (exit code $LASTEXITCODE): $Exe $($Args -join ' ')"
     }
 }
 
 if ($FetchMame) {
-    Write-Host "==> Atualizando chdman via release oficial do MAME"
+    Write-Host "==> Updating chdman from the official MAME release"
     & "$PSScriptRoot\fetch-mame.ps1" -OutputDir "tools/mame" -Force:$ForceMameRefresh
     if ($LASTEXITCODE -ne 0) {
-        throw "Falha na atualização automática do MAME."
+        throw "Automatic MAME update failed."
     }
 }
 
 if ($FetchMame -or $Fetch7Zip) {
-    Write-Host "==> Atualizando extrator 7-Zip"
+    Write-Host "==> Updating 7-Zip extractor"
     & "$PSScriptRoot\fetch-7zip.ps1" -OutputDir "tools/7zip" -Force:$Force7ZipRefresh
     if ($LASTEXITCODE -ne 0) {
-        throw "Falha na atualização automática do 7-Zip."
+        throw "Automatic 7-Zip update failed."
     }
 }
 
 if (-not (Test-Path "tools\mame\chdman.exe")) {
-    throw "chdman.exe não encontrado em tools\mame\chdman.exe. Use -FetchMame ou copie manualmente."
+    throw "chdman.exe was not found at tools\mame\chdman.exe. Use -FetchMame or copy it manually."
 }
 
-Write-Host "==> Limpando artefatos antigos"
+Write-Host "==> Cleaning old build artifacts"
 if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
 if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" }
 if (Test-Path "$AppName.spec") { Remove-Item -Force "$AppName.spec" }
 
-Write-Host "==> Instalando dependências de build"
+Write-Host "==> Installing build dependencies"
 Invoke-ExternalCommand -Exe $PythonExe -Args @("-m", "pip", "install", "-r", "requirements-build.txt")
 
-Write-Host "==> Gerando executável portátil (one-dir)"
+Write-Host "==> Building portable executable (one-dir)"
 Invoke-ExternalCommand -Exe $PythonExe -Args @(
     "-m",
     "PyInstaller",
@@ -71,9 +71,10 @@ Invoke-ExternalCommand -Exe $PythonExe -Args @(
     "src/main.py"
 )
 
-Write-Host "==> Copiando pasta tools/mame para distribuição"
+Write-Host "==> Copying tools/mame folder to distribution output"
 $targetTools = Join-Path "dist\$AppName" "tools"
 New-Item -Path $targetTools -ItemType Directory -Force | Out-Null
 Copy-Item -Path "tools\*" -Destination $targetTools -Recurse -Force
 
-Write-Host "==> Build concluído em dist\$AppName"
+Write-Host "==> Build completed at dist\$AppName"
+

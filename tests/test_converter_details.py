@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from pathlib import Path
 
 from cue_chd_converter.converter import _build_runtime_failure_details, _infer_failure_cause
@@ -8,7 +8,7 @@ from cue_chd_converter.models import CueGame
 class ConverterDetailsTests(unittest.TestCase):
     def test_infer_missing_file_cause(self) -> None:
         diagnosis, hint = _infer_failure_cause(stdout="", stderr="unable to open input file: game.bin")
-        self.assertIn("entrada ausente", diagnosis)
+        self.assertIn("missing input", diagnosis)
         self.assertIn(".cue", hint)
 
     def test_runtime_failure_details_contains_context(self) -> None:
@@ -23,11 +23,12 @@ class ConverterDetailsTests(unittest.TestCase):
             stderr="access is denied",
         )
 
-        self.assertIn("[ERRO DETALHADO]", details)
-        self.assertIn("Código de retorno: 1", details)
-        self.assertIn("Diagnóstico provável", details)
-        self.assertIn("Comando completo", details)
+        self.assertIn("[DETAILED ERROR]", details)
+        self.assertIn("Return code: 1", details)
+        self.assertIn("Likely diagnosis", details)
+        self.assertIn("Full command", details)
 
 
 if __name__ == "__main__":
     unittest.main()
+

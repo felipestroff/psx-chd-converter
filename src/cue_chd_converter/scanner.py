@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 from typing import Iterable, List, Tuple
 
 from cue_chd_converter.archive_utils import detect_archive_type
@@ -25,9 +25,9 @@ def scan_roms(path: Path, recursive: bool = False) -> Tuple[List[CueGame], List[
         if file_path.suffix.lower() != ".cue":
             archive_type = detect_archive_type(file_path)
             if archive_type is None:
-                reason = "Formato não suportado"
+                reason = "Unsupported format"
             elif archive_type == "unsupported":
-                reason = "Compactado detectado (.rar) sem suporte de extração automática"
+                reason = "Archive detected (.rar) without automatic extraction support"
             else:
                 compatible.append(
                     CueGame(
@@ -50,8 +50,9 @@ def scan_roms(path: Path, recursive: bool = False) -> Tuple[List[CueGame], List[
                 )
             )
         else:
-            ignored.append(IgnoredEntry(path=file_path, reason=reason or "CUE inválido"))
+            ignored.append(IgnoredEntry(path=file_path, reason=reason or "Invalid CUE"))
 
     compatible.sort(key=lambda item: item.display_name.lower())
     ignored.sort(key=lambda item: item.path.name.lower())
     return compatible, ignored
+

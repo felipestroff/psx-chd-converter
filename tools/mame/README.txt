@@ -1,13 +1,13 @@
-Coloque aqui os executáveis do MAME necessários para conversão.
+﻿Place required MAME executables for conversion here.
 
-Estrutura esperada:
+Expected structure:
 - tools/mame/chdman.exe
-- (opcional) DLLs necessárias do chdman na mesma pasta
+- (optional) required chdman DLL files in the same folder
 
-O aplicativo procura por `tools/mame/chdman.exe` relativo ao executável.
+The application looks for `tools/mame/chdman.exe` relative to the executable.
 
-Opcionalmente, use:
+Optionally, use:
 - scripts/fetch-mame.ps1
 - scripts/build.ps1 -FetchMame
 
-para baixar automaticamente da release oficial do MAME.
+to download automatically from the official MAME release.

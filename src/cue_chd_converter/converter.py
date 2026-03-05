@@ -1,4 +1,4 @@
-import subprocess
+﻿import subprocess
 import threading
 from pathlib import Path
 from typing import Callable, Optional, Tuple
@@ -23,29 +23,29 @@ class ChdConverter:
     ) -> Tuple[bool, str]:
         if not self.chdman_path.exists():
             detail = _build_precheck_failure_details(
-                title="Falha de pré-validação",
+                title="Pre-validation failure",
                 game=game,
                 output_path=output_path,
                 chdman_path=self.chdman_path,
-                reason="chdman não encontrado",
-                hint="Coloque chdman.exe em tools\\mame\\chdman.exe",
+                reason="chdman was not found",
+                hint="Place chdman.exe at tools\\mame\\chdman.exe",
             )
             if on_log:
                 on_log(detail)
-            return False, "Falha de pré-validação (chdman ausente)"
+            return False, "Pre-validation failure (missing chdman)"
 
         if output_path.exists() and not overwrite:
             detail = _build_precheck_failure_details(
-                title="Falha de pré-validação",
+                title="Pre-validation failure",
                 game=game,
                 output_path=output_path,
                 chdman_path=self.chdman_path,
-                reason="arquivo de saída já existe",
-                hint="Ative a opção de sobrescrever .chd existente",
+                reason="output file already exists",
+                hint="Enable overwrite for an existing .chd file",
             )
             if on_log:
                 on_log(detail)
-            return False, "Falha de pré-validação (arquivo de saída já existe)"
+            return False, "Pre-validation failure (output file already exists)"
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -62,7 +62,7 @@ class ChdConverter:
             command.append("-f")
 
         if on_log:
-            on_log("Comando: {0}".format(" ".join(_quote(arg) for arg in command)))
+            on_log("Command: {0}".format(" ".join(_quote(arg) for arg in command)))
 
         process: Optional[subprocess.Popen[str]] = None
         try:
@@ -76,16 +76,16 @@ class ChdConverter:
             )
         except OSError as exc:
             detail = _build_precheck_failure_details(
-                title="Falha ao iniciar chdman",
+                title="Failed to start chdman",
                 game=game,
                 output_path=output_path,
                 chdman_path=self.chdman_path,
                 reason=str(exc),
-                hint="Verifique permissões de execução e DLLs do MAME",
+                hint="Check execution permissions and MAME DLL dependencies",
             )
             if on_log:
                 on_log(detail)
-            return False, "Falha ao iniciar chdman"
+            return False, "Failed to start chdman"
 
         stdout, stderr, canceled = _wait_process_with_cancel(process, cancel_event)
         combined_output = "\n".join(part for part in [stdout, stderr] if part).strip()
@@ -93,7 +93,7 @@ class ChdConverter:
             on_log(combined_output)
 
         if canceled:
-            return False, "Conversão cancelada pelo usuário"
+            return False, "Conversion canceled by user"
 
         if process.returncode != 0:
             detail = _build_runtime_failure_details(
@@ -107,9 +107,9 @@ class ChdConverter:
             )
             if on_log:
                 on_log(detail)
-            return False, "Falha na conversão (detalhes no log)"
+            return False, "Conversion failed (see log details)"
 
-        return True, "Conversão concluída"
+        return True, "Conversion completed"
 
 
 def _quote(arg: str) -> str:
@@ -147,13 +147,13 @@ def _build_precheck_failure_details(
     hint: str,
 ) -> str:
     lines = [
-        "[ERRO DETALHADO] {0}".format(title),
-        "Jogo: {0}".format(game.display_name),
-        "Origem: {0}".format(game.cue_path),
-        "Saída: {0}".format(output_path),
+        "[DETAILED ERROR] {0}".format(title),
+        "Game: {0}".format(game.display_name),
+        "Source: {0}".format(game.cue_path),
+        "Output: {0}".format(output_path),
         "chdman: {0}".format(chdman_path),
-        "Causa: {0}".format(reason),
-        "Sugestão: {0}".format(hint),
+        "Cause: {0}".format(reason),
+        "Suggestion: {0}".format(hint),
     ]
     return "\n".join(lines)
 
@@ -169,15 +169,15 @@ def _build_runtime_failure_details(
 ) -> str:
     diagnosis, hint = _infer_failure_cause(stdout=stdout, stderr=stderr)
     lines = [
-        "[ERRO DETALHADO] Falha na conversão via chdman",
-        "Jogo: {0}".format(game.display_name),
-        "Origem: {0}".format(game.cue_path),
-        "Saída: {0}".format(output_path),
+        "[DETAILED ERROR] chdman conversion failed",
+        "Game: {0}".format(game.display_name),
+        "Source: {0}".format(game.cue_path),
+        "Output: {0}".format(output_path),
         "chdman: {0}".format(chdman_path),
-        "Código de retorno: {0}".format(return_code),
-        "Diagnóstico provável: {0}".format(diagnosis),
-        "Sugestão: {0}".format(hint),
-        "Comando completo: {0}".format(" ".join(_quote(arg) for arg in command)),
+        "Return code: {0}".format(return_code),
+        "Likely diagnosis: {0}".format(diagnosis),
+        "Suggestion: {0}".format(hint),
+        "Full command: {0}".format(" ".join(_quote(arg) for arg in command)),
     ]
 
     stderr_clean = _clean_output(stderr)
@@ -197,23 +197,23 @@ def _infer_failure_cause(stdout: str, stderr: str) -> Tuple[str, str]:
     merged = "{0}\n{1}".format(stdout, stderr).lower()
 
     if "no such file" in merged or "cannot find" in merged or "unable to open" in merged:
-        return "arquivo de entrada ausente ou caminho inválido", "Verifique se o .cue e arquivos referenciados existem"
+        return "missing input file or invalid path", "Check whether the .cue and referenced files exist"
     if "permission denied" in merged or "access is denied" in merged:
-        return "permissão negada ao ler/escrever arquivos", "Execute em pasta com permissão de escrita e sem bloqueio"
+        return "permission denied while reading/writing files", "Run in a folder with write access and no lock"
     if "already exists" in merged or "file exists" in merged:
-        return "arquivo de saída já existe", "Ative sobrescrita ou remova o .chd existente"
+        return "output file already exists", "Enable overwrite or remove the existing .chd"
     if "unsupported" in merged or "not supported" in merged:
-        return "formato não suportado pelo chdman", "Valide o conteúdo do .cue e trilhas referenciadas"
+        return "format not supported by chdman", "Validate the .cue content and referenced tracks"
     if "out of memory" in merged:
-        return "memória insuficiente durante a conversão", "Feche outros programas e tente novamente"
+        return "insufficient memory during conversion", "Close other programs and try again"
     if "error parsing" in merged or "parse error" in merged:
-        return "arquivo .cue malformado", "Corrija o .cue ou use outro dump"
+        return "malformed .cue file", "Fix the .cue file or use a different dump"
     if "crc" in merged:
-        return "dados de entrada corrompidos", "Reextraia os arquivos ou obtenha outro dump"
+        return "corrupted input data", "Extract the files again or obtain another dump"
     if "dll" in merged and "not found" in merged:
-        return "dependências do chdman ausentes", "Copie DLLs do MAME junto ao chdman.exe"
+        return "missing chdman dependencies", "Copy MAME DLLs together with chdman.exe"
 
-    return "falha não categorizada retornada pelo chdman", "Consulte STDERR/STDOUT acima para identificar a causa"
+    return "uncategorized failure returned by chdman", "Check STDERR/STDOUT above to identify the root cause"
 
 
 def _clean_output(text: str) -> str:
@@ -223,5 +223,7 @@ def _clean_output(text: str) -> str:
 
     max_chars = 6000
     if len(cleaned) > max_chars:
-        return "{0}\n...[saída truncada para {1} caracteres]...".format(cleaned[:max_chars], max_chars)
+        return "{0}\n...[output truncated to {1} characters]...".format(cleaned[:max_chars], max_chars)
     return cleaned
+
+

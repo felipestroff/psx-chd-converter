@@ -1,4 +1,4 @@
-import tempfile
+﻿import tempfile
 import unittest
 from pathlib import Path
 
@@ -30,8 +30,9 @@ class CueParserTests(unittest.TestCase):
             valid, _, reason = parse_cue_references(cue_path)
 
             self.assertFalse(valid)
-            self.assertIn("ausentes", reason or "")
+            self.assertIn("Missing referenced files", reason or "")
 
 
 if __name__ == "__main__":
     unittest.main()
+

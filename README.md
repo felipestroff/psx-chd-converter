@@ -1,48 +1,48 @@
-# PSX CHD Converter
+﻿# PSX CHD Batch Converter
 
-Aplicativo desktop para Windows que converte jogos de PlayStation em formato `.cue` para `.chd` usando `chdman.exe createcd` (MAME).
+Windows desktop application to convert PlayStation `.cue` games to `.chd` using `chdman.exe createcd` (MAME).
 
-## Inspiração
+## Inspiration
 
-Este projeto nasceu de uma necessidade real: compactar jogos de PS1 para uso em emuladores (incluindo o RetroPie), reduzindo o espaço ocupado em cartões de memória com capacidade limitada.  
-Além da economia de armazenamento com o formato `.chd`, a proposta foi simplificar uma tarefa repetitiva com conversão em lote, permitindo processar várias ROMs de forma mais automática, rápida e organizada.
+This project started from a real need: compress PS1 games for emulators (including RetroPie), reducing storage usage on small-capacity memory cards.
+In addition to storage savings with the `.chd` format, the goal was to simplify a repetitive task through batch conversion, allowing multiple ROMs to be processed in a more automatic, fast, and organized workflow.
 
-## O que já está implementado
+## What's Already Implemented
 
-- Executável portátil (sem instalador) via PyInstaller (`one-dir`).
-- Organização do `chdman` em pasta separada: `tools/mame`.
-- Seleção de:
-  - pasta de ROMs
-  - arquivo `.cue` único
-- Varredura de ROMs compatíveis:
-  - lista `.cue` válidos e compactados suportados
-  - mostra visualmente os ignorados/incompatíveis com motivo
-- Conversão:
-  - ROM individual (selecionando 1 item)
-  - múltiplas ROMs selecionadas
-  - lote completo (todos listados)
-- Extração automática de compactados antes da conversão:
+- Portable executable build (no installer) via PyInstaller (`one-dir`).
+- `chdman` kept in a separate folder: `tools/mame`.
+- Source selection:
+  - ROM folder
+  - single `.cue` file
+- Compatible ROM scan:
+  - lists valid `.cue` files and supported archives
+  - visually shows ignored/incompatible entries with reason
+- Conversion modes:
+  - single ROM (selecting one item)
+  - multiple selected ROMs
+  - full batch (all listed items)
+- Automatic archive extraction before conversion:
   - `.zip`, `.7z`, `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tbz2`, `.tar.xz`, `.txz`
-  - `.rar` detectado e exibido como não suportado para extração automática
-- Cancelamento de conversão em andamento (incluindo fila).
-- Progresso de conversão:
-  - atual/total considerando etapas de extração + conversão
-  - status por jogo (`Pronto`, `Na fila`, `Convertendo`, `Convertido`, `Falhou`, `Cancelado`)
-  - log detalhado do `chdman`, incluindo diagnóstico provável da causa em caso de falha
-  - botão `Abrir log` para visualizar o log em janela separada (útil em telas pequenas)
-  - alerta/modal ao finalizar (com som padrão do Windows)
-- Destino configurável:
-  - mesma pasta da ROM (padrão)
-  - pasta de saída customizada
-- Opção de sobrescrever `.chd` existente.
-- Persistência de configurações:
-  - última origem usada
-  - destino padrão
-  - sobrescrita
-  - varredura recursiva
-  - tamanho/posição da janela
+  - `.rar` is detected and shown as unsupported for automatic extraction
+- Cancel running conversion (including queued steps).
+- Conversion progress:
+  - current/total considering extraction + conversion steps
+  - per-item status (`Ready`, `Queued`, `Converting`, `Converted`, `Failed`, `Canceled`)
+  - detailed `chdman` log with probable failure diagnosis
+  - `Open log` button for a separate log window (useful on small screens)
+  - completion modal/alert with default Windows sound
+- Configurable output:
+  - same folder as source ROM (default)
+  - custom output folder
+- Option to overwrite existing `.chd`.
+- Settings persistence:
+  - last source path
+  - default output path
+  - overwrite option
+  - recursive scan
+  - window size/position
 
-## Estrutura do projeto
+## Project Structure
 
 ```
 .
@@ -67,91 +67,91 @@ Além da economia de armazenamento com o formato `.chd`, a proposta foi simplifi
       └─ README.txt
 ```
 
-## Como usar em desenvolvimento
+## Running in Development
 
-1. Coloque `chdman.exe` em `tools/mame/chdman.exe`.
-2. Rode:
+1. Place `chdman.exe` at `tools/mame/chdman.exe`.
+2. Run:
 
 ```powershell
 python src/main.py
 ```
 
-Para suporte a `.7z` em ambiente de desenvolvimento:
+For `.7z` support in development environment:
 
 ```powershell
 python -m pip install py7zr
 ```
 
-Alternativa sem `py7zr`: coloque `7z.exe` em `tools/7zip/7z.exe` (ou tenha `7z` no `PATH` do sistema).
+Alternative without `py7zr`: place `7z.exe` at `tools/7zip/7z.exe` (or have `7z` available in system `PATH`).
 
-## Como gerar executável portátil
+## Building Portable Executable
 
-1. Garanta que `chdman.exe` está em `tools/mame/chdman.exe`, ou use download automático.
-2. Execute:
+1. Ensure `chdman.exe` is available at `tools/mame/chdman.exe`, or use automatic download.
+2. Run:
 
 ```powershell
 .\scripts\build.ps1
 ```
 
-3. A distribuição final ficará em `dist/CueChdConverter/`.
+3. Final distribution is generated at `dist/CueChdConverter/`.
 
-### Build com download automático do MAME (release oficial)
+### Build with Automatic MAME Download (Official Release)
 
-Baixa automaticamente o pacote oficial mais recente listado em `https://www.mamedev.org/release.html`, extrai `chdman.exe` (e DLLs necessárias) para `tools/mame`, também baixa `7zr.exe` oficial para `tools/7zip`, e depois executa o build:
+Automatically downloads the latest official package listed on `https://www.mamedev.org/release.html`, extracts `chdman.exe` (and required DLLs) to `tools/mame`, also downloads official `7zr.exe` to `tools/7zip`, and then runs the build:
 
 ```powershell
 .\scripts\build.ps1 -FetchMame
 ```
 
-Para forçar atualização mesmo já existindo `tools/mame/chdman.exe`:
+To force refresh even when `tools/mame/chdman.exe` already exists:
 
 ```powershell
 .\scripts\build.ps1 -FetchMame -ForceMameRefresh
 ```
 
-Também é possível baixar sem build:
+You can also download without building:
 
 ```powershell
 .\scripts\fetch-mame.ps1 -OutputDir tools/mame
 ```
 
-Baixar apenas o 7-Zip sem build:
+Download only 7-Zip without build:
 
 ```powershell
 .\scripts\fetch-7zip.ps1 -OutputDir tools/7zip
 ```
 
-Para fixar uma versão específica com URL direta:
+To pin a specific version using a direct URL:
 
 ```powershell
 .\scripts\fetch-mame.ps1 -PackageUrl https://github.com/mamedev/mame/releases/download/mame0286/mame0286b_x64.exe
 ```
 
-Para forçar atualização do 7-Zip no build:
+To force 7-Zip refresh during build:
 
 ```powershell
 .\scripts\build.ps1 -FetchMame -Force7ZipRefresh
 ```
 
-## Compatibilidade Windows
+## Windows Compatibility
 
-- Interface nativa com `tkinter/ttk` (tema automático conforme Windows).
-- Para **Win10/Win11**: build normal com Python atual.
-- Para **Win7**: gere o build com **Python 3.8.x (64-bit)**, que é a linha com melhor compatibilidade legada para esse cenário.
+- Native UI using `tkinter/ttk` (automatic theme according to Windows).
+- For **Windows 10/11**: normal build with current Python.
+- For **Windows 7**: build with **Python 3.8.x (64-bit)** for better legacy compatibility in this scenario.
 
-## Observações
+## Notes
 
-- O app valida arquivos referenciados dentro do `.cue` antes de listar como compatível.
-- Arquivos não `.cue` ou `.cue` inválidos não entram na lista de conversão.
-- Configurações ficam em `%APPDATA%\CueChdConverter\settings.json`.
-- Compactados suportados aparecem em `ROMs compatíveis` e podem ser convertidos por seleção ou em lote.
+- The app validates files referenced inside `.cue` before listing as compatible.
+- Non-`.cue` files or invalid `.cue` files are not listed for conversion.
+- Settings are stored at `%APPDATA%\CueChdConverter\settings.json`.
+- Supported archives are listed in `Compatible ROMs` and can be converted by selection or batch.
 
-## Créditos
+## Credits
 
-- Desenvolvedor: **Felipe Stroff**
-- Contato: **stroff.felipe@gmail.com** (dúvidas, sugestões e contato)
+- Developer: **Felipe Stroff**
+- Contact: **stroff.felipe@gmail.com** (questions, suggestions, and contact)
 - GitHub: **https://github.com/felipestroff**
 
-## Licença
+## License
 
-Este projeto é distribuído sob licença de uso **não comercial**. O uso comercial e a comercialização do código são proibidos sem autorização prévia do autor. Consulte o arquivo [LICENSE](LICENSE).
+This project is distributed under a **non-commercial** license. Commercial use and code commercialization are prohibited without prior author permission. See [LICENSE](LICENSE).

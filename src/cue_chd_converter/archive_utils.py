@@ -1,4 +1,4 @@
-import hashlib
+﻿import hashlib
 import shutil
 import subprocess
 import tarfile
@@ -63,10 +63,10 @@ def extract_archive_to_workspace(
 ) -> Tuple[bool, Optional[Path], str]:
     archive_type = detect_archive_type(archive_path)
     if archive_type is None:
-        return False, None, "Arquivo não é compactado"
+        return False, None, "File is not an archive"
 
     if archive_type == "unsupported":
-        return False, None, "Formato compactado não suportado para extração automática (.rar)"
+        return False, None, "Archive format not supported for automatic extraction (.rar)"
 
     workspace_root.mkdir(parents=True, exist_ok=True)
     target_dir = workspace_root / _build_archive_folder_name(archive_path)
@@ -82,12 +82,12 @@ def extract_archive_to_workspace(
         elif archive_type == "7z":
             _extract_7z_safely(archive_path, target_dir)
         else:
-            return False, None, "Formato compactado não suportado: {0}".format(archive_path.suffix)
+            return False, None, "Archive format not supported: {0}".format(archive_path.suffix)
     except Exception as exc:
         shutil.rmtree(target_dir, ignore_errors=True)
-        return False, None, "Falha ao extrair {0}: {1}".format(archive_path.name, exc)
+        return False, None, "Failed to extract {0}: {1}".format(archive_path.name, exc)
 
-    return True, target_dir, "Extração concluída"
+    return True, target_dir, "Extraction completed"
 
 
 def _extract_zip_safely(archive_path: Path, target_dir: Path) -> None:
@@ -96,7 +96,7 @@ def _extract_zip_safely(archive_path: Path, target_dir: Path) -> None:
         for info in zipped.infolist():
             candidate = (target_dir / info.filename).resolve()
             if not _is_path_inside(candidate, root):
-                raise ValueError("Entrada inválida no ZIP: {0}".format(info.filename))
+                raise ValueError("Invalid ZIP entry: {0}".format(info.filename))
         zipped.extractall(target_dir)
 
 
@@ -106,7 +106,7 @@ def _extract_tar_safely(archive_path: Path, target_dir: Path) -> None:
         for member in tarred.getmembers():
             candidate = (target_dir / member.name).resolve()
             if not _is_path_inside(candidate, root):
-                raise ValueError("Entrada inválida no TAR: {0}".format(member.name))
+                raise ValueError("Invalid TAR entry: {0}".format(member.name))
         tarred.extractall(target_dir)
 
 
@@ -123,14 +123,14 @@ def _extract_7z_safely(archive_path: Path, target_dir: Path) -> None:
         for name in names:
             candidate = (target_dir / name).resolve()
             if not _is_path_inside(candidate, root):
-                raise ValueError("Entrada inválida no 7z: {0}".format(name))
+                raise ValueError("Invalid 7z entry: {0}".format(name))
         zipped.extractall(path=target_dir)
 
 
 def _extract_7z_with_cli(archive_path: Path, target_dir: Path) -> None:
     exe = _find_7z_executable()
     if not exe:
-        raise RuntimeError("Suporte .7z requer py7zr ou 7z.exe (tools/7zip/7z.exe)")
+        raise RuntimeError(".7z support requires py7zr or 7z.exe (tools/7zip/7z.exe)")
 
     command = [str(exe), "x", str(archive_path), "-o{0}".format(target_dir), "-y"]
     process = subprocess.run(
@@ -143,7 +143,7 @@ def _extract_7z_with_cli(archive_path: Path, target_dir: Path) -> None:
     )
     if process.returncode != 0:
         details = "\n".join(part for part in [process.stdout, process.stderr] if part).strip()
-        raise RuntimeError("falha no 7z (código {0}): {1}".format(process.returncode, details or "sem detalhes"))
+        raise RuntimeError("7z extraction failed (code {0}): {1}".format(process.returncode, details or "no details"))
 
 
 def _find_7z_executable() -> Optional[Path]:
@@ -179,3 +179,4 @@ def _is_path_inside(candidate: Path, root: Path) -> bool:
 def _build_archive_folder_name(archive_path: Path) -> str:
     digest = hashlib.sha1(str(archive_path.resolve()).encode("utf-8")).hexdigest()[:10]
     return "{0}_{1}".format(archive_path.stem, digest)
+

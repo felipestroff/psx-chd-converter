@@ -1,10 +1,10 @@
-Opcional: coloque aqui o extrator 7-Zip para suporte a ROMs `.7z` sem depender de `py7zr`.
+﻿Optional: place the 7-Zip extractor here to support `.7z` ROMs without depending on `py7zr`.
 
-Estrutura esperada:
+Expected structure:
 - tools/7zip/7z.exe
 
-Se este arquivo existir, o app usa ele automaticamente para extrair `.7z`.
+If this file exists, the app uses it automatically to extract `.7z`.
 
-Você também pode baixar automaticamente com:
+You can also download automatically with:
 - scripts/fetch-7zip.ps1
 - scripts/build.ps1 -FetchMame

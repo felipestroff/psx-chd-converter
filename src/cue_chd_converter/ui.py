@@ -1,4 +1,4 @@
-import queue
+﻿import queue
 import shutil
 import threading
 import tempfile
@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 try:
     import winsound  # type: ignore
-except ImportError:
+except ImportErrorr:
     winsound = None  # type: ignore
 
 from cue_chd_converter.archive_utils import (
@@ -46,9 +46,9 @@ class MainWindow(tk.Tk):
 
         self.source_path_var = tk.StringVar(value=self.settings.last_source_path)
         self.destination_path_var = tk.StringVar(value=self.settings.destination_path)
-        self.summary_var = tk.StringVar(value="Nenhuma origem selecionada.")
+        self.summary_var = tk.StringVar(value="No source selected.")
         self.progress_var = tk.DoubleVar(value=0.0)
-        self.progress_text_var = tk.StringVar(value="Aguardando conversão...")
+        self.progress_text_var = tk.StringVar(value="Waiting for conversion...")
         self.same_folder_var = tk.BooleanVar(value=self.settings.same_folder)
         self.recursive_var = tk.BooleanVar(value=self.settings.recursive_scan)
         self.extract_archives_var = tk.BooleanVar(value=self.settings.extract_archives)
@@ -77,7 +77,7 @@ class MainWindow(tk.Tk):
             self._apply_saved_geometry(self.settings.window_geometry)
 
         self._update_destination_state()
-        self._log("chdman esperado em: {0}".format(self.chdman_path))
+        self._log("Expected chdman at: {0}".format(self.chdman_path))
 
         self._restore_source_from_settings()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -95,25 +95,25 @@ class MainWindow(tk.Tk):
         root = ttk.Frame(self, padding=10)
         root.pack(fill=tk.BOTH, expand=True)
 
-        source_frame = ttk.LabelFrame(root, text="Origem das ROMs (.cue e compactados)", padding=10)
+        source_frame = ttk.LabelFrame(root, text="ROM Source (.cue and archives)", padding=10)
         source_frame.pack(fill=tk.X, expand=False)
 
-        ttk.Label(source_frame, text="Origem:").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ttk.Label(source_frame, text="Source:").grid(row=0, column=0, sticky="w", padx=(0, 8))
         self.source_entry = ttk.Entry(source_frame, textvariable=self.source_path_var, state="readonly")
         self.source_entry.grid(row=0, column=1, sticky="ew")
 
-        self.select_folder_btn = ttk.Button(source_frame, text="Selecionar pasta", command=self._select_folder)
+        self.select_folder_btn = ttk.Button(source_frame, text="Select folder", command=self._select_folder)
         self.select_folder_btn.grid(row=0, column=2, padx=(8, 0))
 
-        self.select_file_btn = ttk.Button(source_frame, text="Selecionar arquivo", command=self._select_file)
+        self.select_file_btn = ttk.Button(source_frame, text="Select file", command=self._select_file)
         self.select_file_btn.grid(row=0, column=3, padx=(8, 0))
 
-        self.reload_btn = ttk.Button(source_frame, text="Recarregar", command=self._reload_source)
+        self.reload_btn = ttk.Button(source_frame, text="Reload", command=self._reload_source)
         self.reload_btn.grid(row=0, column=4, padx=(8, 0))
 
         self.recursive_check = ttk.Checkbutton(
             source_frame,
-            text="Incluir subpastas",
+            text="Include subfolders",
             variable=self.recursive_var,
             command=self._on_recursive_toggle,
         )
@@ -121,7 +121,7 @@ class MainWindow(tk.Tk):
 
         self.extract_archives_check = ttk.Checkbutton(
             source_frame,
-            text="Extrair arquivos compactados antes de converter (.zip/.7z/.tar)",
+            text="Extract archives before converting (.zip/.7z/.tar)",
             variable=self.extract_archives_var,
             command=self._on_extract_archives_toggle,
         )
@@ -129,29 +129,29 @@ class MainWindow(tk.Tk):
 
         source_frame.columnconfigure(1, weight=1)
 
-        destination_frame = ttk.LabelFrame(root, text="Destino", padding=10)
+        destination_frame = ttk.LabelFrame(root, text="Destination", padding=10)
         destination_frame.pack(fill=tk.X, expand=False, pady=(10, 0))
 
         self.same_folder_check = ttk.Checkbutton(
             destination_frame,
-            text="Salvar no mesmo diretório da ROM",
+            text="Save in the ROM''s source folder",
             variable=self.same_folder_var,
             command=self._on_same_folder_toggle,
         )
         self.same_folder_check.grid(row=0, column=0, sticky="w")
 
-        ttk.Label(destination_frame, text="Pasta destino:").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(destination_frame, text="Destination folder:").grid(row=1, column=0, sticky="w", pady=(8, 0))
         self.destination_entry = ttk.Entry(destination_frame, textvariable=self.destination_path_var)
         self.destination_entry.grid(row=1, column=1, sticky="ew", pady=(8, 0))
 
         self.select_destination_btn = ttk.Button(
-            destination_frame, text="Escolher destino", command=self._select_destination
+            destination_frame, text="Choose destination", command=self._select_destination
         )
         self.select_destination_btn.grid(row=1, column=2, padx=(8, 0), pady=(8, 0))
 
         self.overwrite_check = ttk.Checkbutton(
             destination_frame,
-            text="Sobrescrever .chd existente",
+            text="Overwrite existing .chd",
             variable=self.overwrite_var,
             command=self._on_overwrite_toggle,
         )
@@ -162,8 +162,8 @@ class MainWindow(tk.Tk):
         lists_frame = ttk.Panedwindow(root, orient=tk.HORIZONTAL)
         lists_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
 
-        compatible_frame = ttk.LabelFrame(lists_frame, text="ROMs compatíveis (.cue + compactados)", padding=10)
-        ignored_frame = ttk.LabelFrame(lists_frame, text="Ignorados / incompatíveis", padding=10)
+        compatible_frame = ttk.LabelFrame(lists_frame, text="Compatible ROMs (.cue + archives)", padding=10)
+        ignored_frame = ttk.LabelFrame(lists_frame, text="Ignored / incompatible", padding=10)
         lists_frame.add(compatible_frame, weight=3)
         lists_frame.add(ignored_frame, weight=2)
 
@@ -174,9 +174,9 @@ class MainWindow(tk.Tk):
             selectmode="extended",
             height=12,
         )
-        self.compatible_tree.heading("name", text="Jogo")
+        self.compatible_tree.heading("name", text="Game")
         self.compatible_tree.heading("status", text="Status")
-        self.compatible_tree.heading("path", text="Origem")
+        self.compatible_tree.heading("path", text="Source")
         self.compatible_tree.column("name", width=220, anchor="w")
         self.compatible_tree.column("status", width=110, anchor="center")
         self.compatible_tree.column("path", width=520, anchor="w")
@@ -195,8 +195,8 @@ class MainWindow(tk.Tk):
         self.ignored_tree = ttk.Treeview(
             ignored_frame, columns=ignored_columns, show="headings", selectmode="browse", height=12
         )
-        self.ignored_tree.heading("file", text="Arquivo")
-        self.ignored_tree.heading("reason", text="Motivo")
+        self.ignored_tree.heading("file", text="File")
+        self.ignored_tree.heading("reason", text="Reason")
         self.ignored_tree.column("file", width=300, anchor="w")
         self.ignored_tree.column("reason", width=320, anchor="w")
         ig_scroll = ttk.Scrollbar(ignored_frame, orient=tk.VERTICAL, command=self.ignored_tree.yview)
@@ -218,28 +218,28 @@ class MainWindow(tk.Tk):
         actions_frame.pack(fill=tk.X, expand=False, pady=(8, 0))
 
         self.convert_selected_btn = ttk.Button(
-            actions_frame, text="Converter selecionados", command=self._convert_selected
+            actions_frame, text="Convert selected", command=self._convert_selected
         )
         self.convert_selected_btn.pack(side=tk.LEFT)
 
-        self.convert_all_btn = ttk.Button(actions_frame, text="Converter todos", command=self._convert_all)
+        self.convert_all_btn = ttk.Button(actions_frame, text="Convert all", command=self._convert_all)
         self.convert_all_btn.pack(side=tk.LEFT, padx=(8, 0))
 
-        self.clear_status_btn = ttk.Button(actions_frame, text="Limpar status", command=self._reset_statuses)
+        self.clear_status_btn = ttk.Button(actions_frame, text="Clear status", command=self._reset_statuses)
         self.clear_status_btn.pack(side=tk.LEFT, padx=(8, 0))
 
-        self.open_log_btn = ttk.Button(actions_frame, text="Abrir log", command=self._open_log_window)
+        self.open_log_btn = ttk.Button(actions_frame, text="Open log", command=self._open_log_window)
         self.open_log_btn.pack(side=tk.LEFT, padx=(8, 0))
 
-        self.credits_btn = ttk.Button(actions_frame, text="Créditos", command=self._show_credits)
+        self.credits_btn = ttk.Button(actions_frame, text="Credits", command=self._show_credits)
         self.credits_btn.pack(side=tk.LEFT, padx=(8, 0))
 
         self.stop_conversion_btn = ttk.Button(
-            actions_frame, text="Cancelar conversão", command=self._cancel_conversion, state=tk.DISABLED
+            actions_frame, text="Cancel conversion", command=self._cancel_conversion, state=tk.DISABLED
         )
         self.stop_conversion_btn.pack(side=tk.LEFT, padx=(8, 0))
 
-        progress_frame = ttk.LabelFrame(root, text="Progresso", padding=10)
+        progress_frame = ttk.LabelFrame(root, text="Progress", padding=10)
         progress_frame.pack(fill=tk.X, expand=False, pady=(10, 0))
 
         self.progress_bar = ttk.Progressbar(progress_frame, mode="determinate", variable=self.progress_var, maximum=100.0)
@@ -252,7 +252,7 @@ class MainWindow(tk.Tk):
         )
         self.progress_label.pack(anchor="w", fill=tk.X, pady=(6, 0))
 
-        log_frame = ttk.LabelFrame(root, text="Log da conversão", padding=10)
+        log_frame = ttk.LabelFrame(root, text="Conversion log", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
 
         self.log_text = tk.Text(log_frame, height=7, state=tk.DISABLED, wrap="word")
@@ -300,17 +300,17 @@ class MainWindow(tk.Tk):
         self._save_settings()
 
     def _select_folder(self) -> None:
-        selected = filedialog.askdirectory(title="Escolha a pasta com ROMs")
+        selected = filedialog.askdirectory(title="Choose ROM folder")
         if not selected:
             return
         self._load_source(Path(selected))
 
     def _select_file(self) -> None:
         selected = filedialog.askopenfilename(
-            title="Escolha um arquivo CUE ou compactado",
+            title="Choose a CUE or archive file",
             filetypes=[
                 (
-                    "Suportados",
+                    "Supported",
                     (
                         "*.cue",
                         "*.zip",
@@ -326,7 +326,7 @@ class MainWindow(tk.Tk):
                 ),
                 ("CUE", "*.cue"),
                 (
-                    "Compactados",
+                    "Archives",
                     (
                         "*.zip",
                         "*.7z",
@@ -339,7 +339,7 @@ class MainWindow(tk.Tk):
                         "*.txz",
                     ),
                 ),
-                ("Todos os arquivos", "*.*"),
+                ("All files", "*.*"),
             ],
         )
         if not selected:
@@ -347,7 +347,7 @@ class MainWindow(tk.Tk):
         self._load_source(Path(selected))
 
     def _select_destination(self) -> None:
-        selected = filedialog.askdirectory(title="Escolha a pasta de destino")
+        selected = filedialog.askdirectory(title="Choose destination folder")
         if not selected:
             return
         self.destination_path_var.set(selected)
@@ -359,7 +359,7 @@ class MainWindow(tk.Tk):
 
     def _load_source(self, source: Path) -> None:
         if not source.exists():
-            messagebox.showerror("Erro", "Caminho de origem não encontrado.")
+            messagebox.showerror("Error", "Source path not found.")
             return
 
         self.source_path = source.resolve()
@@ -375,13 +375,13 @@ class MainWindow(tk.Tk):
         ignored_count = len(self.ignored_entries)
         archive_count = len([game for game in self.compatible_games if game.is_archive])
         self.summary_var.set(
-            "{0} ROM(s) compatível(is). {1} compactado(s) suportado(s). {2} arquivo(s) ignorado(s).".format(
+            "{0} compatible ROM(s). {1} supported archive(s). {2} ignored file(s).".format(
                 compatible_count, archive_count, ignored_count
             )
         )
         self._set_summary(self.summary_var.get(), color="#003B8E")
-        self._log("Origem carregada: {0}".format(self.source_path))
-        self._log("Compatíveis: {0} | Ignorados: {1}".format(compatible_count, ignored_count))
+        self._log("Loaded source: {0}".format(self.source_path))
+        self._log("Compatible: {0} | Ignored: {1}".format(compatible_count, ignored_count))
         self._save_settings()
 
     def _populate_compatible(self) -> None:
@@ -390,7 +390,7 @@ class MainWindow(tk.Tk):
         self.cue_to_item.clear()
 
         for game in self.compatible_games:
-            self._insert_game_row(game, status="Pronto (compactado)" if game.is_archive else "Pronto")
+            self._insert_game_row(game, status="Ready (archive)" if game.is_archive else "Ready")
 
     def _populate_ignored(self) -> None:
         self.ignored_tree.delete(*self.ignored_tree.get_children())
@@ -418,27 +418,27 @@ class MainWindow(tk.Tk):
         if game.archive_origin:
             return "{0} -> {1}".format(game.archive_origin.name, game.cue_path.name)
         if game.is_archive:
-            return "[compactado] {0}".format(game.cue_path)
+            return "[archive] {0}".format(game.cue_path)
         return str(game.cue_path)
 
     def _reset_statuses(self) -> None:
         for item in self.compatible_tree.get_children():
             game = self.item_to_game.get(item)
-            default_status = "Pronto (compactado)" if game and game.is_archive else "Pronto"
+            default_status = "Ready (archive)" if game and game.is_archive else "Ready"
             self.compatible_tree.set(item, "status", default_status)
             self.compatible_tree.item(item, tags=("pending",))
         self.progress_var.set(0.0)
-        self.progress_text_var.set("Aguardando conversão...")
+        self.progress_text_var.set("Waiting for conversion...")
 
     def _convert_selected(self) -> None:
         selected_items = self.compatible_tree.selection()
         if not selected_items:
-            messagebox.showinfo("Conversão", "Selecione ao menos uma ROM compatível.")
+            messagebox.showinfo("Conversion", "Select at least one compatible ROM.")
             return
         selected_sources = [self.item_to_game[item] for item in selected_items]
         cue_games, archive_paths = self._split_conversion_sources(selected_sources, include_archives=True)
         if not cue_games and not archive_paths:
-            messagebox.showinfo("Conversão", "Nenhum item selecionado para conversão.")
+            messagebox.showinfo("Conversion", "No selected item to convert.")
             return
         self._start_conversion(cue_games, archive_paths=archive_paths)
 
@@ -450,7 +450,7 @@ class MainWindow(tk.Tk):
         cue_games, archive_paths = self._split_conversion_sources(self.compatible_games, include_archives=include_archives)
 
         if not cue_games and not archive_paths:
-            messagebox.showinfo("Conversão", "Nenhuma ROM compatível ou compactado selecionado para conversão.")
+            messagebox.showinfo("Conversion", "No compatible ROM or archive selected for conversion.")
             return
         self._start_conversion(cue_games, archive_paths=archive_paths)
 
@@ -459,7 +459,7 @@ class MainWindow(tk.Tk):
             return
         self.cancel_event.set()
         self.stop_conversion_btn.configure(state=tk.DISABLED)
-        self._log("Solicitação de cancelamento recebida. Aguardando tarefa atual finalizar...")
+        self._log("Cancel request received. Waiting for current task to finish...")
 
     def _start_conversion(self, games: Sequence[CueGame], archive_paths: Sequence[Path]) -> None:
         if self.is_converting:
@@ -467,8 +467,8 @@ class MainWindow(tk.Tk):
 
         if not self.chdman_path.exists():
             messagebox.showerror(
-                "chdman ausente",
-                "Não foi encontrado chdman.exe em:\n{0}\n\nColoque o executável em tools\\mame\\chdman.exe".format(
+                "Missing chdman",
+                "chdman.exe was not found at:\n{0}\n\nPlace the executable at tools\\mame\\chdman.exe".format(
                     self.chdman_path
                 ),
             )
@@ -478,7 +478,7 @@ class MainWindow(tk.Tk):
         if not self.same_folder_var.get():
             destination_text = self.destination_path_var.get().strip()
             if not destination_text:
-                messagebox.showerror("Destino inválido", "Selecione uma pasta de destino.")
+                messagebox.showerror("Invalid destination", "Select a destination folder.")
                 return
             destination_root = Path(destination_text)
             destination_root.mkdir(parents=True, exist_ok=True)
@@ -488,21 +488,21 @@ class MainWindow(tk.Tk):
         self.is_converting = True
         self._set_controls_enabled(False)
         self.progress_var.set(0.0)
-        self.progress_text_var.set("Preparando conversão...")
+        self.progress_text_var.set("Preparing conversion...")
 
         for game in games:
-            self._set_game_status(game.cue_path, "Na fila")
+            self._set_game_status(game.cue_path, "Queued")
         for archive_path in archive_paths:
-            self._set_game_status(archive_path, "Na fila")
+            self._set_game_status(archive_path, "Queued")
 
         if archive_paths:
             self._log(
-                "Iniciando conversão de {0} ROM(s) + extração de {1} compactado(s).".format(
+                "Starting conversion of {0} ROM(s) + extraction of {1} archive(s).".format(
                     len(games), len(archive_paths)
                 )
             )
         else:
-            self._log("Iniciando conversão de {0} ROM(s).".format(len(games)))
+            self._log("Starting conversion of {0} ROM(s).".format(len(games)))
         self.conversion_thread = threading.Thread(
             target=self._worker_convert,
             args=(list(games), list(archive_paths), destination_root, overwrite),
@@ -522,13 +522,13 @@ class MainWindow(tk.Tk):
         extraction_fail_count = 0
         completed_steps = 0
         total_steps = len(games) + len(archive_paths)
-        self.worker_queue.put(("progress", completed_steps, total_steps, "Preparando conversão"))
+        self.worker_queue.put(("progress", completed_steps, total_steps, "Preparing conversion"))
 
         if archive_paths:
             self.worker_queue.put(
                 (
                     "log",
-                    "Extraindo compactados antes da conversão ({0} arquivo(s))...".format(len(archive_paths)),
+                    "Extracting archives before conversion ({0} file(s))...".format(len(archive_paths)),
                     None,
                     None,
                 )
@@ -539,13 +539,13 @@ class MainWindow(tk.Tk):
 
             for archive_path in archive_paths:
                 if self.cancel_event.is_set():
-                    self.worker_queue.put(("status", str(archive_path), "Cancelado"))
+                    self.worker_queue.put(("status", str(archive_path), "Canceled"))
                     completed_steps += 1
                     self.worker_queue.put(("progress", completed_steps, total_steps, archive_path.name))
                     break
 
-                self.worker_queue.put(("status", str(archive_path), "Extraindo"))
-                self.worker_queue.put(("log", "Extraindo: {0}".format(archive_path), None, None))
+                self.worker_queue.put(("status", str(archive_path), "Extracting"))
+                self.worker_queue.put(("log", "Extracting: {0}".format(archive_path), None, None))
                 ok_extract, extracted_dir, message = extract_archive_to_workspace(
                     archive_path=archive_path,
                     workspace_root=workspace_root,
@@ -556,17 +556,17 @@ class MainWindow(tk.Tk):
                     self.worker_queue.put(
                         (
                             "log",
-                            "[ERRO DETALHADO] Falha na extração\n"
-                            "Arquivo: {0}\n"
-                            "Causa: {1}\n"
-                            "Sugestão: Verifique integridade do compactado, suporte do formato e disponibilidade do extrator .7z".format(
+                            "[DETAILED ERROR] Extraction failed\n"
+                            "File: {0}\n"
+                            "Cause: {1}\n"
+                            "Suggestion: Check archive integrity, format support, and .7z extractor availability".format(
                                 archive_path, message
                             ),
                             None,
                             None,
                         )
                     )
-                    self.worker_queue.put(("status", str(archive_path), "Falhou"))
+                    self.worker_queue.put(("status", str(archive_path), "Failed"))
                     completed_steps += 1
                     self.worker_queue.put(("progress", completed_steps, total_steps, archive_path.name))
                     continue
@@ -579,22 +579,22 @@ class MainWindow(tk.Tk):
                         "{0}: {1}".format(item.path.name, item.reason) for item in ignored_inside[:5]
                     )
                     if not ignored_preview:
-                        ignored_preview = "Nenhum item compatível encontrado"
+                        ignored_preview = "No compatible item found"
                     self.worker_queue.put(
                         (
                             "log",
-                            "[ERRO DETALHADO] Conteúdo incompatível após extração\n"
-                            "Arquivo: {0}\n"
-                            "Causa: Nenhum .cue válido encontrado\n"
-                            "Itens ignorados: {1}\n"
-                            "Exemplos: {2}".format(
+                            "[DETAILED ERROR] Incompatible content after extraction\n"
+                            "File: {0}\n"
+                            "Cause: No valid .cue found\n"
+                            "Ignored items: {1}\n"
+                            "Examples: {2}".format(
                                 archive_path.name, len(ignored_inside), ignored_preview
                             ),
                             None,
                             None,
                         )
                     )
-                    self.worker_queue.put(("status", str(archive_path), "Falhou"))
+                    self.worker_queue.put(("status", str(archive_path), "Failed"))
                     completed_steps += 1
                     self.worker_queue.put(("progress", completed_steps, total_steps, archive_path.name))
                     continue
@@ -605,11 +605,11 @@ class MainWindow(tk.Tk):
                     games.append(extracted_game)
                 total_steps += len(extracted_games)
 
-                self.worker_queue.put(("status", str(archive_path), "Extraído"))
+                self.worker_queue.put(("status", str(archive_path), "Extracted"))
                 self.worker_queue.put(
                     (
                         "log",
-                        "{0} ROM(s) extraída(s) de {1}".format(len(extracted_games), archive_path.name),
+                        "{0} ROM(s) extracted from {1}".format(len(extracted_games), archive_path.name),
                         None,
                         None,
                     )
@@ -627,7 +627,7 @@ class MainWindow(tk.Tk):
             if self.cancel_event.is_set():
                 canceled = True
                 canceled_count += 1
-                self.worker_queue.put(("status", str(status_anchor), "Cancelado"))
+                self.worker_queue.put(("status", str(status_anchor), "Canceled"))
                 completed_steps += 1
                 self.worker_queue.put(("progress", completed_steps, total_steps, game.display_name))
                 continue
@@ -635,7 +635,7 @@ class MainWindow(tk.Tk):
             target_dir = self._resolve_output_dir(game, destination_root)
             output_path = (target_dir / game.cue_path.with_suffix(".chd").name).resolve()
 
-            self.worker_queue.put(("status", str(status_anchor), "Convertendo"))
+            self.worker_queue.put(("status", str(status_anchor), "Converting"))
             self.worker_queue.put(
                 (
                     "log",
@@ -658,15 +658,15 @@ class MainWindow(tk.Tk):
 
             if ok:
                 success_count += 1
-                status = "Convertido"
+                status = "Converted"
             else:
-                if self.cancel_event.is_set() and "cancelada" in message.lower():
+                if self.cancel_event.is_set() and "canceled" in message.lower():
                     canceled = True
                     canceled_count += 1
-                    status = "Cancelado"
+                    status = "Canceled"
                 else:
                     fail_count += 1
-                    status = "Falhou"
+                    status = "Failed"
 
             self.worker_queue.put(("status", str(status_anchor), status))
             self.worker_queue.put(("log", message, None, None))
@@ -680,7 +680,7 @@ class MainWindow(tk.Tk):
             try:
                 shutil.rmtree(workspace, ignore_errors=True)
             except OSError:
-                self.worker_queue.put(("log", "Falha ao limpar pasta temporária: {0}".format(workspace), None, None))
+                self.worker_queue.put(("log", "Failed to clean temporary folder: {0}".format(workspace), None, None))
 
         self.worker_queue.put(
             (
@@ -727,22 +727,22 @@ class MainWindow(tk.Tk):
                 self.progress_var.set(percent)
                 if canceled:
                     self.progress_text_var.set(
-                        "Conversão cancelada. {0}/{1} etapa(s) processada(s).".format(
+                        "Conversion canceled. {0}/{1} step(s) processed.".format(
                             completed_steps, total_steps
                         )
                     )
                     self._log(
-                        "Cancelado. Sucesso: {0} | Falha conversão: {1} | Falha extração: {2} | Cancelado: {3}".format(
+                        "Canceled. Success: {0} | Conversion failed: {1} | Extraction failed: {2} | Canceled: {3}".format(
                             success, failed, extraction_failed, canceled_count
                         )
                     )
                 else:
                     if total_steps:
-                        self.progress_text_var.set("{0}/{1} etapa(s) finalizada(s).".format(completed_steps, total_steps))
+                        self.progress_text_var.set("{0}/{1} step(s) completed.".format(completed_steps, total_steps))
                     else:
-                        self.progress_text_var.set("Nenhuma ROM convertida.")
+                        self.progress_text_var.set("No ROM was converted.")
                     self._log(
-                        "Finalizado. Sucesso: {0} | Falha conversão: {1} | Falha extração: {2}".format(
+                        "Finished. Success: {0} | Conversion failed: {1} | Extraction failed: {2}".format(
                             success, failed, extraction_failed
                         )
                     )
@@ -782,15 +782,15 @@ class MainWindow(tk.Tk):
 
         self.compatible_tree.set(item, "status", status)
         status_tag = {
-            "Pronto": "pending",
-            "Pronto (compactado)": "pending",
-            "Na fila": "pending",
-            "Convertendo": "running",
-            "Extraindo": "running",
-            "Convertido": "success",
-            "Extraído": "success",
-            "Falhou": "failed",
-            "Cancelado": "canceled",
+            "Ready": "pending",
+            "Ready (archive)": "pending",
+            "Queued": "pending",
+            "Converting": "running",
+            "Extracting": "running",
+            "Converted": "success",
+            "Extracted": "success",
+            "Failed": "failed",
+            "Canceled": "canceled",
         }.get(status, "pending")
         self.compatible_tree.item(item, tags=(status_tag,))
 
@@ -804,13 +804,13 @@ class MainWindow(tk.Tk):
         total_steps: int,
     ) -> None:
         if canceled:
-            title = "Conversão cancelada"
+            title = "Conversion canceled"
             message = (
-                "Processo cancelado.\n\n"
-                "Etapas processadas: {0}/{1}\n"
-                "Convertidos: {2}\n"
-                "Falhas de conversão: {3}\n"
-                "Falhas de extração: {4}".format(
+                "Process canceled.\n\n"
+                "Processed steps: {0}/{1}\n"
+                "Converted: {2}\n"
+                "Conversion failures: {3}\n"
+                "Extraction failures: {4}".format(
                     completed_steps, total_steps, success, failed, extraction_failed
                 )
             )
@@ -821,13 +821,13 @@ class MainWindow(tk.Tk):
 
         has_failure = failed > 0 or extraction_failed > 0
         if has_failure:
-            title = "Conversão finalizada com falhas"
+            title = "Conversion completed with failures"
             message = (
-                "Processo finalizado com falhas.\n\n"
-                "Etapas processadas: {0}/{1}\n"
-                "Convertidos: {2}\n"
-                "Falhas de conversão: {3}\n"
-                "Falhas de extração: {4}".format(
+                "Process finished with failures.\n\n"
+                "Processed steps: {0}/{1}\n"
+                "Converted: {2}\n"
+                "Conversion failures: {3}\n"
+                "Extraction failures: {4}".format(
                     completed_steps, total_steps, success, failed, extraction_failed
                 )
             )
@@ -836,11 +836,11 @@ class MainWindow(tk.Tk):
             messagebox.showwarning(title, message, parent=self)
             return
 
-        title = "Conversão concluída"
+        title = "Conversion completed"
         message = (
-            "Processo finalizado com sucesso.\n\n"
-            "Etapas processadas: {0}/{1}\n"
-            "ROM(s) convertida(s): {2}".format(completed_steps, total_steps, success)
+            "Process finished successfully.\n\n"
+            "Processed steps: {0}/{1}\n"
+            "Converted ROM(s): {2}".format(completed_steps, total_steps, success)
         )
         self._set_summary(message.replace("\n", " "), color="#0A6E0A")
         self._play_system_sound(kind="info")
@@ -914,7 +914,7 @@ class MainWindow(tk.Tk):
             width_str, height_str = size_part.split("x", 1)
             saved_w = int(width_str)
             saved_h = int(height_str)
-        except (ValueError, TypeError):
+        except (ValueErrorr, TypeErrorr):
             return
 
         screen_w = self.winfo_screenwidth()
@@ -931,7 +931,7 @@ class MainWindow(tk.Tk):
             return
 
         popup = tk.Toplevel(self)
-        popup.title("Log da conversão")
+        popup.title("Conversion log")
         popup.geometry("920x420")
         popup.minsize(620, 260)
 
@@ -946,7 +946,7 @@ class MainWindow(tk.Tk):
 
         actions = ttk.Frame(frame)
         actions.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-        ttk.Button(actions, text="Limpar log", command=self._clear_log).pack(side=tk.RIGHT)
+        ttk.Button(actions, text="Clear log", command=self._clear_log).pack(side=tk.RIGHT)
 
         frame.rowconfigure(0, weight=1)
         frame.columnconfigure(0, weight=1)
@@ -983,17 +983,17 @@ class MainWindow(tk.Tk):
 
     def _show_credits(self) -> None:
         text = (
-            "Desenvolvedor do projeto:\n"
+            "Project developer:\n"
             "Felipe Stroff\n\n"
-            "Contato (dúvidas, sugestões e contato):\n"
+            "Contact (questions, suggestions, and feedback):\n"
             "stroff.felipe@gmail.com\n\n"
             "GitHub:\n"
             "https://github.com/felipestroff"
         )
         self._play_system_sound(kind="info")
-        messagebox.showinfo("Créditos", text, parent=self)
+        messagebox.showinfo("Credits", text, parent=self)
 
-        if messagebox.askyesno("Abrir GitHub", "Deseja abrir o perfil do desenvolvedor no GitHub?", parent=self):
+        if messagebox.askyesno("Open GitHub", "Do you want to open the developer profile on GitHub?", parent=self):
             webbrowser.open("https://github.com/felipestroff")
 
     def _restore_source_from_settings(self) -> None:
@@ -1029,8 +1029,8 @@ class MainWindow(tk.Tk):
     def _on_close(self) -> None:
         if self.is_converting:
             if not messagebox.askyesno(
-                "Conversão em andamento",
-                "Existe uma conversão em andamento. Deseja cancelar e sair?",
+                "Conversion in progress",
+                "There is a conversion in progress. Do you want to cancel and exit?",
             ):
                 return
             self.cancel_event.set()
@@ -1066,3 +1066,6 @@ class MainWindow(tk.Tk):
 def run_app() -> None:
     app = MainWindow()
     app.mainloop()
+
+
+

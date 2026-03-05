@@ -1,4 +1,4 @@
-import re
+﻿import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -9,15 +9,15 @@ FILE_UNQUOTED_REGEX = re.compile(r"^\s*FILE\s+(?P<name>\S+)\s+\S+", re.IGNORECAS
 
 def parse_cue_references(cue_path: Path) -> Tuple[bool, List[Path], Optional[str]]:
     if cue_path.suffix.lower() != ".cue":
-        return False, [], "Extensão não é .cue"
+        return False, [], "File extension is not .cue"
 
     if not cue_path.exists() or not cue_path.is_file():
-        return False, [], "Arquivo .cue não encontrado"
+        return False, [], ".cue file was not found"
 
     try:
         lines = _read_cue_lines(cue_path)
     except OSError as exc:
-        return False, [], "Falha ao ler .cue: {0}".format(exc)
+        return False, [], "Failed to read .cue: {0}".format(exc)
 
     referenced_files: List[Path] = []
     for line in lines:
@@ -32,11 +32,11 @@ def parse_cue_references(cue_path: Path) -> Tuple[bool, List[Path], Optional[str
         referenced_files.append((cue_path.parent / ref_name).resolve())
 
     if not referenced_files:
-        return False, [], "Nenhuma linha FILE encontrada"
+        return False, [], "No FILE line found"
 
     missing = [str(path.name) for path in referenced_files if not path.exists()]
     if missing:
-        return False, referenced_files, "Arquivos referenciados ausentes: {0}".format(", ".join(missing))
+        return False, referenced_files, "Missing referenced files: {0}".format(", ".join(missing))
 
     return True, referenced_files, None
 
@@ -49,3 +49,4 @@ def _read_cue_lines(cue_path: Path) -> List[str]:
         except UnicodeDecodeError:
             continue
     return cue_path.read_text(encoding="utf-8", errors="replace").splitlines()
+
