@@ -1,4 +1,4 @@
-﻿import queue
+import queue
 import shutil
 import threading
 import tempfile
@@ -68,7 +68,13 @@ class MainWindow(tk.Tk):
         self.is_converting = False
         self.log_popup: Optional[tk.Toplevel] = None
         self.log_popup_text: Optional[tk.Text] = None
-
+        self.progress_current_step = 0
+        self.progress_total_steps = 0
+        self.progress_animation_phase = 0.0
+        self.progress_animation_direction = 1.0
+        self.progress_animation_job: Optional[str] = None
+        self.queue_drain_job: Optional[str] = None
+        self.is_closing = False
         self.chdman_path = resolve_chdman_path()
         self.converter = ChdConverter(self.chdman_path)
 
@@ -433,6 +439,11 @@ class MainWindow(tk.Tk):
             default_status = "Ready (archive)" if game and game.is_archive else "Ready"
             self.compatible_tree.set(item, "status", default_status)
             self.compatible_tree.item(item, tags=("pending",))
+        self._stop_progress_animation()
+        self.progress_current_step = 0
+        self.progress_total_steps = 0
+        self.progress_animation_phase = 0.0
+        self.progress_animation_direction = 1.0
         self.progress_var.set(0.0)
         self.progress_text_var.set("Waiting for conversion...")
 
@@ -495,13 +506,21 @@ class MainWindow(tk.Tk):
             archive_paths=archive_paths,
             write_log=True,
         )
-
         overwrite = self.overwrite_var.get()
+        planned_total_steps = self._initial_total_steps(games=games, archive_paths=archive_paths)
         self.cancel_event.clear()
         self.is_converting = True
         self._set_controls_enabled(False)
+        self.progress_current_step = 0
+        self.progress_total_steps = planned_total_steps
+        self.progress_animation_phase = 0.0
+        self.progress_animation_direction = 1.0
         self.progress_var.set(0.0)
-        self.progress_text_var.set("Preparing conversion...")
+        if planned_total_steps > 0:
+            self.progress_text_var.set("0/{0} - Preparing conversion...".format(planned_total_steps))
+        else:
+            self.progress_text_var.set("Preparing conversion...")
+        self._log("Planned progress steps: {0}".format(planned_total_steps))
 
         for game in games:
             self._set_game_status(game.cue_path, "Queued")
@@ -522,7 +541,8 @@ class MainWindow(tk.Tk):
             daemon=True,
         )
         self.conversion_thread.start()
-        self.after(100, self._drain_worker_queue)
+        self._start_progress_animation()
+        self.queue_drain_job = self.after(100, self._drain_worker_queue)
 
     def _worker_convert(
         self,
@@ -534,7 +554,7 @@ class MainWindow(tk.Tk):
         extracted_workspaces: List[Path] = []
         extraction_fail_count = 0
         completed_steps = 0
-        total_steps = len(games) + len(archive_paths)
+        total_steps = self._initial_total_steps(games=games, archive_paths=archive_paths)
         self.worker_queue.put(("progress", completed_steps, total_steps, "Preparing conversion"))
 
         if archive_paths:
@@ -557,6 +577,9 @@ class MainWindow(tk.Tk):
                     self.worker_queue.put(("progress", completed_steps, total_steps, archive_path.name))
                     break
 
+                self.worker_queue.put(
+                    ("progress", completed_steps, total_steps, "Extracting {0}".format(archive_path.name))
+                )
                 self.worker_queue.put(("status", str(archive_path), "Extracting"))
                 self.worker_queue.put(("log", "Extracting: {0}".format(archive_path), None, None))
                 ok_extract, extracted_dir, message = extract_archive_to_workspace(
@@ -616,7 +639,7 @@ class MainWindow(tk.Tk):
                     extracted_game.archive_origin = archive_path.resolve()
                     extracted_game.extraction_dir = extracted_dir
                     games.append(extracted_game)
-                total_steps += len(extracted_games)
+                total_steps += len(extracted_games) * 2
 
                 self.worker_queue.put(("status", str(archive_path), "Extracted"))
                 self.worker_queue.put(
@@ -641,13 +664,16 @@ class MainWindow(tk.Tk):
                 canceled = True
                 canceled_count += 1
                 self.worker_queue.put(("status", str(status_anchor), "Canceled"))
-                completed_steps += 1
+                completed_steps += 2
                 self.worker_queue.put(("progress", completed_steps, total_steps, game.display_name))
                 continue
 
             target_dir = self._resolve_output_dir(game, destination_root)
             output_path = (target_dir / game.cue_path.with_suffix(".chd").name).resolve()
 
+            self.worker_queue.put(
+                ("progress", completed_steps, total_steps, "{0} (converting)".format(game.display_name))
+            )
             self.worker_queue.put(("status", str(status_anchor), "Converting"))
             self.worker_queue.put(
                 (
@@ -661,7 +687,7 @@ class MainWindow(tk.Tk):
             def log_callback(text: str) -> None:
                 self.worker_queue.put(("log", text, None, None))
 
-            ok, message = self.converter.convert(
+            create_ok, create_message = self.converter.create_cd(
                 game=game,
                 output_path=output_path,
                 overwrite=overwrite,
@@ -669,22 +695,60 @@ class MainWindow(tk.Tk):
                 cancel_event=self.cancel_event,
             )
 
-            if ok:
-                success_count += 1
-                status = "Converted"
+            if create_ok:
+                completed_steps += 1
+                self.worker_queue.put(("progress", completed_steps, total_steps, "{0} (conversion)".format(game.display_name)))
+
+                self.worker_queue.put(
+                    ("progress", completed_steps, total_steps, "{0} (verifying)".format(game.display_name))
+                )
+                self.worker_queue.put(("status", str(status_anchor), "Verifying"))
+                verify_ok, verify_message = self.converter.verify_chd(
+                    game=game,
+                    output_path=output_path,
+                    on_log=log_callback,
+                    cancel_event=self.cancel_event,
+                )
+                completed_steps += 1
+                self.worker_queue.put(
+                    ("progress", completed_steps, total_steps, "{0} (verification)".format(game.display_name))
+                )
+
+                if verify_ok:
+                    success_count += 1
+                    status = "Verified"
+                    message = verify_message
+                else:
+                    if self.cancel_event.is_set() and "canceled" in verify_message.lower():
+                        canceled = True
+                        canceled_count += 1
+                        status = "Canceled"
+                    else:
+                        fail_count += 1
+                        status = "Failed"
+                    message = verify_message
             else:
-                if self.cancel_event.is_set() and "canceled" in message.lower():
+                if self.cancel_event.is_set() and "canceled" in create_message.lower():
                     canceled = True
                     canceled_count += 1
                     status = "Canceled"
+                    message = create_message
                 else:
                     fail_count += 1
                     status = "Failed"
+                    message = "{0}\nVerification skipped due conversion failure.".format(create_message)
+
+                completed_steps += 1
+                self.worker_queue.put(
+                    ("progress", completed_steps, total_steps, "{0} (conversion failed)".format(game.display_name))
+                )
+                completed_steps += 1
+                self.worker_queue.put(
+                    ("progress", completed_steps, total_steps, "{0} (verification skipped)".format(game.display_name))
+                )
 
             self.worker_queue.put(("status", str(status_anchor), status))
             self.worker_queue.put(("log", message, None, None))
-            completed_steps += 1
-            self.worker_queue.put(("progress", completed_steps, total_steps, game.display_name))
 
             if canceled:
                 continue
@@ -709,6 +773,10 @@ class MainWindow(tk.Tk):
         )
 
     def _drain_worker_queue(self) -> None:
+        self.queue_drain_job = None
+        if self.is_closing:
+            return
+
         done = False
         while True:
             try:
@@ -716,71 +784,138 @@ class MainWindow(tk.Tk):
             except queue.Empty:
                 break
 
-            event_type = event[0]
-            if event_type == "log":
-                self._log(str(event[1]))
-            elif event_type == "status":
-                cue_path = Path(str(event[1]))
-                status = str(event[2])
-                self._set_game_status(cue_path, status)
-            elif event_type == "progress":
-                current = int(event[1])
-                total = int(event[2])
-                label = str(event[3])
-                self._update_progress(current, total, label)
-            elif event_type == "done":
-                success = int(event[1])
-                failed = int(event[2])
-                extraction_failed = int(event[3])
-                canceled_count = int(event[4])
-                completed_steps = int(event[5])
-                total_steps = int(event[6])
-                canceled = bool(event[7])
-                percent = (float(completed_steps) / float(total_steps)) * 100.0 if total_steps else 0.0
-                self.progress_var.set(percent)
-                if canceled:
-                    self.progress_text_var.set(
-                        "Conversion canceled. {0}/{1} step(s) processed.".format(
-                            completed_steps, total_steps
+            try:
+                event_type = event[0]
+                if event_type == "log":
+                    self._log(str(event[1]))
+                elif event_type == "status":
+                    cue_path = Path(str(event[1]))
+                    status = str(event[2])
+                    self._set_game_status(cue_path, status)
+                elif event_type == "progress":
+                    current = int(event[1])
+                    total = int(event[2])
+                    label = str(event[3])
+                    self._update_progress(current, total, label)
+                elif event_type == "done":
+                    success = int(event[1])
+                    failed = int(event[2])
+                    extraction_failed = int(event[3])
+                    canceled_count = int(event[4])
+                    completed_steps = int(event[5])
+                    total_steps = int(event[6])
+                    canceled = bool(event[7])
+
+                    self.progress_current_step = max(0, completed_steps)
+                    self.progress_total_steps = max(0, total_steps)
+                    self.progress_animation_phase = 0.0
+                    self.progress_animation_direction = 1.0
+
+                    percent = (float(completed_steps) / float(total_steps)) * 100.0 if total_steps else 0.0
+                    self.progress_var.set(percent)
+                    if canceled:
+                        self.progress_text_var.set(
+                            "Conversion canceled. {0}/{1} step(s) processed.".format(
+                                completed_steps, total_steps
+                            )
                         )
-                    )
-                    self._log(
-                        "Canceled. Success: {0} | Conversion failed: {1} | Extraction failed: {2} | Canceled: {3}".format(
-                            success, failed, extraction_failed, canceled_count
+                        self._log(
+                            "Canceled. Verified: {0} | Conversion failed: {1} | Extraction failed: {2} | Canceled: {3}".format(
+                                success, failed, extraction_failed, canceled_count
+                            )
                         )
-                    )
-                else:
-                    if total_steps:
-                        self.progress_text_var.set("{0}/{1} step(s) completed.".format(completed_steps, total_steps))
                     else:
-                        self.progress_text_var.set("No ROM was converted.")
-                    self._log(
-                        "Finished. Success: {0} | Conversion failed: {1} | Extraction failed: {2}".format(
-                            success, failed, extraction_failed
+                        if total_steps:
+                            self.progress_text_var.set("{0}/{1} step(s) completed.".format(completed_steps, total_steps))
+                        else:
+                            self.progress_text_var.set("No ROM was processed.")
+                        self._log(
+                            "Finished. Verified: {0} | Conversion failed: {1} | Extraction failed: {2}".format(
+                                success, failed, extraction_failed
+                            )
                         )
+                    self._notify_process_end(
+                        success=success,
+                        failed=failed,
+                        extraction_failed=extraction_failed,
+                        canceled=canceled,
+                        completed_steps=completed_steps,
+                        total_steps=total_steps,
                     )
-                self._notify_process_end(
-                    success=success,
-                    failed=failed,
-                    extraction_failed=extraction_failed,
-                    canceled=canceled,
-                    completed_steps=completed_steps,
-                    total_steps=total_steps,
-                )
-                done = True
+                    done = True
+            except Exception as exc:
+                self._log("[INTERNAL ERROR] Failed to process worker event: {0}".format(exc))
 
         if done:
+            self.queue_drain_job = None
+            self._stop_progress_animation()
             self.is_converting = False
-            self._set_controls_enabled(True)
+            if not self.is_closing and self._is_window_alive():
+                self._set_controls_enabled(True)
             return
 
-        if self.is_converting:
-            self.after(100, self._drain_worker_queue)
+        if self.is_converting and not self.is_closing:
+            self.queue_drain_job = self.after(100, self._drain_worker_queue)
 
     def _update_progress(self, current: int, total: int, current_game: str) -> None:
-        percent = (float(current) / float(total)) * 100.0 if total else 0.0
+        self.progress_current_step = max(0, int(current))
+        self.progress_total_steps = max(0, int(total))
+        self.progress_animation_phase = 0.0
+        self.progress_animation_direction = 1.0
+
+        percent = (
+            (float(self.progress_current_step) / float(self.progress_total_steps)) * 100.0
+            if self.progress_total_steps
+            else 0.0
+        )
         self.progress_var.set(percent)
         self.progress_text_var.set("{0}/{1} - {2}".format(current, total, current_game))
+
+    def _start_progress_animation(self) -> None:
+        self._stop_progress_animation()
+        self._animate_progress_tick()
+
+    def _stop_progress_animation(self) -> None:
+        if self.progress_animation_job is not None:
+            try:
+                self.after_cancel(self.progress_animation_job)
+            except tk.TclError:
+                pass
+            self.progress_animation_job = None
+
+    def _animate_progress_tick(self) -> None:
+        self.progress_animation_job = None
+        if not self.is_converting:
+            return
+
+        total = self.progress_total_steps
+        current = self.progress_current_step
+        if total > 0:
+            current = max(0, min(current, total))
+            base = (float(current) / float(total)) * 100.0
+            if current < total:
+                next_percent = (float(current + 1) / float(total)) * 100.0
+                step_span = max(0.0, next_percent - base)
+                if step_span > 0.0:
+                    max_phase = max(0.08, min(step_span * 0.65, 1.5))
+                    phase_step = max(0.02, min(step_span * 0.16, 0.35))
+                    self.progress_animation_phase += self.progress_animation_direction * phase_step
+                    if self.progress_animation_phase >= max_phase:
+                        self.progress_animation_phase = max_phase
+                        self.progress_animation_direction = -1.0
+                    elif self.progress_animation_phase <= 0.0:
+                        self.progress_animation_phase = 0.0
+                        self.progress_animation_direction = 1.0
+
+                    animated = base + self.progress_animation_phase
+                    cap = max(base, next_percent - 0.03)
+                    self.progress_var.set(min(animated, cap))
+                else:
+                    self.progress_var.set(base)
+            else:
+                self.progress_var.set(base)
+
+        self.progress_animation_job = self.after(130, self._animate_progress_tick)
 
     def _on_window_resize(self, event: tk.Event) -> None:
         if event.widget is not self:
@@ -799,8 +934,10 @@ class MainWindow(tk.Tk):
             "Ready (archive)": "pending",
             "Queued": "pending",
             "Converting": "running",
+            "Verifying": "running",
             "Extracting": "running",
             "Converted": "success",
+            "Verified": "success",
             "Extracted": "success",
             "Failed": "failed",
             "Canceled": "canceled",
@@ -816,12 +953,15 @@ class MainWindow(tk.Tk):
         completed_steps: int,
         total_steps: int,
     ) -> None:
+        if self.is_closing or not self._is_window_alive():
+            return
+
         if canceled:
             title = "Conversion canceled"
             message = (
                 "Process canceled.\n\n"
                 "Processed steps: {0}/{1}\n"
-                "Converted: {2}\n"
+                "Verified: {2}\n"
                 "Conversion failures: {3}\n"
                 "Extraction failures: {4}".format(
                     completed_steps, total_steps, success, failed, extraction_failed
@@ -838,7 +978,7 @@ class MainWindow(tk.Tk):
             message = (
                 "Process finished with failures.\n\n"
                 "Processed steps: {0}/{1}\n"
-                "Converted: {2}\n"
+                "Verified: {2}\n"
                 "Conversion failures: {3}\n"
                 "Extraction failures: {4}".format(
                     completed_steps, total_steps, success, failed, extraction_failed
@@ -853,7 +993,7 @@ class MainWindow(tk.Tk):
         message = (
             "Process finished successfully.\n\n"
             "Processed steps: {0}/{1}\n"
-            "Converted ROM(s): {2}".format(completed_steps, total_steps, success)
+            "Verified ROM(s): {2}".format(completed_steps, total_steps, success)
         )
         self._set_summary(message.replace("\n", " "), color="#0A6E0A")
         self._play_system_sound(kind="info")
@@ -911,7 +1051,15 @@ class MainWindow(tk.Tk):
         if write_log:
             self._log(estimate_text)
 
+    def _is_window_alive(self) -> bool:
+        try:
+            return bool(self.winfo_exists())
+        except tk.TclError:
+            return False
+
     def _play_system_sound(self, kind: str) -> None:
+        if self.is_closing or not self._is_window_alive():
+            return
         if winsound is not None:
             if kind == "warning":
                 winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
@@ -953,6 +1101,11 @@ class MainWindow(tk.Tk):
             cue_games.append(source)
 
         return cue_games, archive_paths
+
+    def _initial_total_steps(self, games: Sequence[CueGame], archive_paths: Sequence[Path]) -> int:
+        # Base plan: each archive contributes extraction (1 step) and each cue contributes
+        # conversion + verification (2 steps). Extracted cues discovered later expand this total.
+        return (len(games) * 2) + len(archive_paths)
 
     def _resolve_output_dir(self, game: CueGame, destination_root: Optional[Path]) -> Path:
         if destination_root:
@@ -1085,20 +1238,33 @@ class MainWindow(tk.Tk):
             pass
 
     def _on_close(self) -> None:
+        if self.is_closing:
+            return
+
         if self.is_converting:
             if not messagebox.askyesno(
                 "Conversion in progress",
                 "There is a conversion in progress. Do you want to cancel and exit?",
+                parent=self,
             ):
                 return
             self.cancel_event.set()
+
+        self.is_closing = True
+        self._stop_progress_animation()
+        if self.queue_drain_job is not None:
+            try:
+                self.after_cancel(self.queue_drain_job)
+            except tk.TclError:
+                pass
+            self.queue_drain_job = None
 
         self._close_log_window()
         self._save_settings()
         self.destroy()
 
     def _log(self, message: str) -> None:
-        if not message:
+        if not message or self.is_closing or not self._is_window_alive():
             return
         timestamp = time.strftime("%H:%M:%S")
         prepared_lines = ["[{0}] {1}\n".format(timestamp, line) for line in message.splitlines()]
@@ -1124,6 +1290,14 @@ class MainWindow(tk.Tk):
 def run_app() -> None:
     app = MainWindow()
     app.mainloop()
+
+
+
+
+
+
+
+
 
 
 

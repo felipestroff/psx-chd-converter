@@ -21,18 +21,41 @@ class ChdConverter:
         on_log: Optional[LogCallback] = None,
         cancel_event: Optional[threading.Event] = None,
     ) -> Tuple[bool, str]:
-        if not self.chdman_path.exists():
-            detail = _build_precheck_failure_details(
-                title="Pre-validation failure",
-                game=game,
-                output_path=output_path,
-                chdman_path=self.chdman_path,
-                reason="chdman was not found",
-                hint="Place chdman.exe at tools\\mame\\chdman.exe",
-            )
-            if on_log:
-                on_log(detail)
-            return False, "Pre-validation failure (missing chdman)"
+        ok, message = self.create_cd(
+            game=game,
+            output_path=output_path,
+            overwrite=overwrite,
+            on_log=on_log,
+            cancel_event=cancel_event,
+        )
+        if not ok:
+            return False, message
+
+        if cancel_event and cancel_event.is_set():
+            return False, "Conversion canceled by user"
+
+        ok, message = self.verify_chd(
+            game=game,
+            output_path=output_path,
+            on_log=on_log,
+            cancel_event=cancel_event,
+        )
+        if not ok:
+            return False, message
+
+        return True, "Conversion completed and verified"
+
+    def create_cd(
+        self,
+        game: CueGame,
+        output_path: Path,
+        overwrite: bool = False,
+        on_log: Optional[LogCallback] = None,
+        cancel_event: Optional[threading.Event] = None,
+    ) -> Tuple[bool, str]:
+        chdman_check = self._ensure_chdman_available(game=game, output_path=output_path, on_log=on_log)
+        if chdman_check:
+            return chdman_check
 
         if output_path.exists() and not overwrite:
             detail = _build_precheck_failure_details(
@@ -49,7 +72,7 @@ class ChdConverter:
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        command = [
+        create_command = [
             str(self.chdman_path),
             "createcd",
             "-i",
@@ -57,59 +80,152 @@ class ChdConverter:
             "-o",
             str(output_path),
         ]
-
         if overwrite:
-            command.append("-f")
+            create_command.append("-f")
 
-        if on_log:
-            on_log("Command: {0}".format(" ".join(_quote(arg) for arg in command)))
+        ok, message = _run_chdman_stage(
+            stage_label="conversion",
+            command=create_command,
+            game=game,
+            output_path=output_path,
+            chdman_path=self.chdman_path,
+            on_log=on_log,
+            cancel_event=cancel_event,
+        )
+        if not ok:
+            return False, message
 
-        process: Optional[subprocess.Popen[str]] = None
-        try:
-            process = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-        except OSError as exc:
+        return True, "Conversion stage completed"
+
+    def verify_chd(
+        self,
+        game: CueGame,
+        output_path: Path,
+        on_log: Optional[LogCallback] = None,
+        cancel_event: Optional[threading.Event] = None,
+    ) -> Tuple[bool, str]:
+        chdman_check = self._ensure_chdman_available(game=game, output_path=output_path, on_log=on_log)
+        if chdman_check:
+            return chdman_check
+
+        if not output_path.exists() or not output_path.is_file():
             detail = _build_precheck_failure_details(
-                title="Failed to start chdman",
+                title="Pre-validation failure",
                 game=game,
                 output_path=output_path,
                 chdman_path=self.chdman_path,
-                reason=str(exc),
-                hint="Check execution permissions and MAME DLL dependencies",
+                reason="output CHD file not found for verification",
+                hint="Check conversion logs and ensure output path is writable",
             )
             if on_log:
                 on_log(detail)
-            return False, "Failed to start chdman"
+            return False, "Verification failed (output CHD not found)"
 
-        stdout, stderr, canceled = _wait_process_with_cancel(process, cancel_event)
-        combined_output = "\n".join(part for part in [stdout, stderr] if part).strip()
-        if combined_output and on_log:
-            on_log(combined_output)
+        verify_command = [
+            str(self.chdman_path),
+            "verify",
+            "-i",
+            str(output_path),
+        ]
 
-        if canceled:
-            return False, "Conversion canceled by user"
+        ok, message = _run_chdman_stage(
+            stage_label="verification",
+            command=verify_command,
+            game=game,
+            output_path=output_path,
+            chdman_path=self.chdman_path,
+            on_log=on_log,
+            cancel_event=cancel_event,
+        )
+        if not ok:
+            return False, message
 
-        if process.returncode != 0:
-            detail = _build_runtime_failure_details(
-                game=game,
-                output_path=output_path,
-                chdman_path=self.chdman_path,
-                command=command,
-                return_code=process.returncode,
-                stdout=stdout,
-                stderr=stderr,
-            )
-            if on_log:
-                on_log(detail)
-            return False, "Conversion failed (see log details)"
+        return True, "Verification stage completed"
 
-        return True, "Conversion completed"
+    def _ensure_chdman_available(
+        self,
+        game: CueGame,
+        output_path: Path,
+        on_log: Optional[LogCallback],
+    ) -> Optional[Tuple[bool, str]]:
+        if self.chdman_path.exists():
+            return None
+
+        detail = _build_precheck_failure_details(
+            title="Pre-validation failure",
+            game=game,
+            output_path=output_path,
+            chdman_path=self.chdman_path,
+            reason="chdman was not found",
+            hint="Place chdman.exe at tools\\mame\\chdman.exe",
+        )
+        if on_log:
+            on_log(detail)
+        return False, "Pre-validation failure (missing chdman)"
+
+
+def _run_chdman_stage(
+    stage_label: str,
+    command: list[str],
+    game: CueGame,
+    output_path: Path,
+    chdman_path: Path,
+    on_log: Optional[LogCallback],
+    cancel_event: Optional[threading.Event],
+) -> Tuple[bool, str]:
+    if on_log:
+        on_log("Command: {0}".format(" ".join(_quote(arg) for arg in command)))
+
+    process: Optional[subprocess.Popen[str]] = None
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError as exc:
+        detail = _build_precheck_failure_details(
+            title="Failed to start chdman {0}".format(stage_label),
+            game=game,
+            output_path=output_path,
+            chdman_path=chdman_path,
+            reason=str(exc),
+            hint="Check execution permissions and MAME DLL dependencies",
+        )
+        if on_log:
+            on_log(detail)
+        return False, "Failed to start chdman {0}".format(stage_label)
+
+    stdout, stderr, canceled = _wait_process_with_cancel(process, cancel_event)
+    combined_output = "\n".join(part for part in [stdout, stderr] if part).strip()
+    if combined_output and on_log:
+        on_log(combined_output)
+
+    if canceled:
+        return False, "Conversion canceled by user"
+
+    if process.returncode != 0:
+        detail = _build_runtime_failure_details(
+            game=game,
+            output_path=output_path,
+            chdman_path=chdman_path,
+            command=command,
+            return_code=process.returncode,
+            stdout=stdout,
+            stderr=stderr,
+            stage_label=stage_label,
+        )
+        if on_log:
+            on_log(detail)
+
+        if stage_label == "verification":
+            return False, "Verification failed (see log details)"
+        return False, "Conversion failed (see log details)"
+
+    return True, "OK"
 
 
 def _quote(arg: str) -> str:
@@ -166,10 +282,11 @@ def _build_runtime_failure_details(
     return_code: int,
     stdout: str,
     stderr: str,
+    stage_label: str = "conversion",
 ) -> str:
     diagnosis, hint = _infer_failure_cause(stdout=stdout, stderr=stderr)
     lines = [
-        "[DETAILED ERROR] chdman conversion failed",
+        "[DETAILED ERROR] chdman {0} failed".format(stage_label),
         "Game: {0}".format(game.display_name),
         "Source: {0}".format(game.cue_path),
         "Output: {0}".format(output_path),
@@ -210,6 +327,8 @@ def _infer_failure_cause(stdout: str, stderr: str) -> Tuple[str, str]:
         return "malformed .cue file", "Fix the .cue file or use a different dump"
     if "crc" in merged:
         return "corrupted input data", "Extract the files again or obtain another dump"
+    if "sha-1" in merged or "sha1" in merged or "checksum" in merged:
+        return "integrity verification failed", "Recreate the CHD from a known-good source and verify again"
     if "dll" in merged and "not found" in merged:
         return "missing chdman dependencies", "Copy MAME DLLs together with chdman.exe"
 
@@ -225,5 +344,3 @@ def _clean_output(text: str) -> str:
     if len(cleaned) > max_chars:
         return "{0}\n...[output truncated to {1} characters]...".format(cleaned[:max_chars], max_chars)
     return cleaned
-
-

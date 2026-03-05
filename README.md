@@ -27,11 +27,12 @@ In addition to storage savings with the `.chd` format, the goal was to simplify 
 - Cancel running conversion (including queued steps).
 - Conversion progress:
   - current/total considering extraction + conversion steps
-  - per-item status (`Ready`, `Queued`, `Converting`, `Converted`, `Failed`, `Canceled`)
+  - per-item status (`Ready`, `Queued`, `Converting`, `Verified`, `Failed`, `Canceled`)
   - detailed `chdman` log with probable failure diagnosis
   - `Open log` button for a separate log window (useful on small screens)
   - completion modal/alert with default Windows sound
 - Pre-conversion size estimate (current size vs estimated CHD size and estimated savings).
+- Post-conversion validation via `chdman verify` with final status `Verified`.
 - Configurable output:
   - same folder as source ROM (default)
   - custom output folder
@@ -156,4 +157,6 @@ To force 7-Zip refresh during build:
 ## License
 
 This project is distributed under a **non-commercial** license. Commercial use and code commercialization are prohibited without prior author permission. See [LICENSE](LICENSE).
+
+
 
