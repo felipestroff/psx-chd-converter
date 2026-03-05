@@ -1,4 +1,4 @@
-﻿# PSX CHD Batch Converter
+﻿# PSX CHD Converter
 
 Windows desktop application to convert PlayStation `.cue` games to `.chd` using `chdman.exe createcd` (MAME).
 
