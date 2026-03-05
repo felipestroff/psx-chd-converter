@@ -29,6 +29,33 @@ function Invoke-ExternalCommand {
     }
 }
 
+function Invoke-WithCleanTlsEnv {
+    param(
+        [Parameter(Mandatory = $true)][scriptblock]$Action
+    )
+
+    $varsToClear = @("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "PIP_CERT")
+    $backup = @{}
+
+    foreach ($varName in $varsToClear) {
+        $currentValue = [System.Environment]::GetEnvironmentVariable($varName, "Process")
+        if (-not [string]::IsNullOrWhiteSpace($currentValue)) {
+            $backup[$varName] = $currentValue
+            Remove-Item -Path ("Env:{0}" -f $varName) -ErrorAction SilentlyContinue
+            Write-Host "==> Temporarily clearing $varName for pip execution"
+        }
+    }
+
+    try {
+        & $Action
+    }
+    finally {
+        foreach ($item in $backup.GetEnumerator()) {
+            [System.Environment]::SetEnvironmentVariable($item.Key, [string]$item.Value, "Process")
+        }
+    }
+}
+
 if ($FetchMame) {
     Write-Host "==> Updating chdman from the official MAME release"
     & "$PSScriptRoot\fetch-mame.ps1" -OutputDir "tools/mame" -Force:$ForceMameRefresh
@@ -55,7 +82,9 @@ if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" }
 if (Test-Path "$AppName.spec") { Remove-Item -Force "$AppName.spec" }
 
 Write-Host "==> Installing build dependencies"
-Invoke-ExternalCommand -Exe $PythonExe -Args @("-m", "pip", "install", "-r", "requirements-build.txt")
+Invoke-WithCleanTlsEnv {
+    Invoke-ExternalCommand -Exe $PythonExe -Args @("-m", "pip", "install", "-r", "requirements-build.txt")
+}
 
 Write-Host "==> Building portable executable (one-dir)"
 Invoke-ExternalCommand -Exe $PythonExe -Args @(
@@ -77,4 +106,3 @@ New-Item -Path $targetTools -ItemType Directory -Force | Out-Null
 Copy-Item -Path "tools\*" -Destination $targetTools -Recurse -Force
 
 Write-Host "==> Build completed at dist\$AppName"
-
