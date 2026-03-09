@@ -1,0 +1,6 @@
+﻿{
+    "release_api_url":  "https://api.github.com/repos/has207/psxtract-2/releases/latest",
+    "binary_url":  "https://github.com/has207/psxtract-2/releases/download/v2.0/psxtract-2.zip",
+    "source_file":  "psxtract-2.zip",
+    "fetched_at_utc":  "2026-03-05T21:47:58.6558399Z"
+}

@@ -20,7 +20,8 @@ from cue_chd_converter.archive_utils import (
 )
 from cue_chd_converter.converter import ChdConverter
 from cue_chd_converter.models import CueGame, IgnoredEntry
-from cue_chd_converter.paths import resolve_chdman_path
+from cue_chd_converter.paths import resolve_chdman_path, resolve_psxtract_path
+from cue_chd_converter.pbp_utils import extract_pbp_to_workspace
 from cue_chd_converter.scanner import scan_roms
 from cue_chd_converter.settings import AppSettings, SettingsManager
 from cue_chd_converter.size_estimator import estimate_conversion_size, format_estimate_summary
@@ -41,6 +42,7 @@ class MainWindow(tk.Tk):
         self.minsize(860, 560)
 
         self._apply_theme()
+        self._configure_progress_style()
 
         self.settings_manager = SettingsManager()
         self.settings = self.settings_manager.load()
@@ -50,7 +52,8 @@ class MainWindow(tk.Tk):
         self.summary_var = tk.StringVar(value="No source selected.")
         self.estimate_var = tk.StringVar(value="Estimate: load ROMs to preview space savings.")
         self.progress_var = tk.DoubleVar(value=0.0)
-        self.progress_text_var = tk.StringVar(value="Waiting for conversion...")
+        self.progress_percent_var = tk.StringVar(value="0%")
+        self.progress_text_var = tk.StringVar(value="0/0 (0%) - Waiting for conversion...")
         self.same_folder_var = tk.BooleanVar(value=self.settings.same_folder)
         self.recursive_var = tk.BooleanVar(value=self.settings.recursive_scan)
         self.extract_archives_var = tk.BooleanVar(value=self.settings.extract_archives)
@@ -66,44 +69,76 @@ class MainWindow(tk.Tk):
         self.worker_queue: "queue.Queue[WorkerEvent]" = queue.Queue()
         self.cancel_event = threading.Event()
         self.is_converting = False
+        self.log_lines: List[str] = []
         self.log_popup: Optional[tk.Toplevel] = None
         self.log_popup_text: Optional[tk.Text] = None
         self.progress_current_step = 0
         self.progress_total_steps = 0
-        self.progress_animation_phase = 0.0
-        self.progress_animation_direction = 1.0
-        self.progress_animation_job: Optional[str] = None
         self.queue_drain_job: Optional[str] = None
         self.is_closing = False
         self.chdman_path = resolve_chdman_path()
+        self.psxtract_path = resolve_psxtract_path()
         self.converter = ChdConverter(self.chdman_path)
 
         self._build_layout()
         self.bind("<Configure>", self._on_window_resize)
-
-        if self.settings.window_geometry:
-            self._apply_saved_geometry(self.settings.window_geometry)
+        self._force_fullscreen_start()
 
         self._update_destination_state()
         self._log("Expected chdman at: {0}".format(self.chdman_path))
+        self._log("Expected psxtract at: {0}".format(self.psxtract_path))
 
         self._restore_source_from_settings()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _apply_theme(self) -> None:
-        style = ttk.Style(self)
+        self.style = ttk.Style(self)
         preferred = ["vista", "xpnative", "winnative", "clam", "default"]
-        available = set(style.theme_names())
+        available = set(self.style.theme_names())
         for theme in preferred:
             if theme in available:
-                style.theme_use(theme)
+                self.style.theme_use(theme)
                 break
+
+    def _configure_progress_style(self) -> None:
+        self.progress_style_name = "Text.Horizontal.TProgressbar"
+        try:
+            self.style.layout(
+                self.progress_style_name,
+                [
+                    (
+                        "Horizontal.Progressbar.trough",
+                        {
+                            "sticky": "nswe",
+                            "children": [
+                                ("Horizontal.Progressbar.pbar", {"side": "left", "sticky": "ns"}),
+                                ("Horizontal.Progressbar.label", {"sticky": ""}),
+                            ],
+                        },
+                    )
+                ],
+            )
+        except tk.TclError:
+            self.progress_style_name = "Horizontal.TProgressbar"
+
+        self.style.configure(self.progress_style_name, text="0%", anchor="center")
+
+    def _force_fullscreen_start(self) -> None:
+        try:
+            self.state("zoomed")
+            return
+        except tk.TclError:
+            pass
+
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        self.geometry("{0}x{1}+0+0".format(screen_w, screen_h))
 
     def _build_layout(self) -> None:
         root = ttk.Frame(self, padding=10)
         root.pack(fill=tk.BOTH, expand=True)
 
-        source_frame = ttk.LabelFrame(root, text="ROM Source (.cue and archives)", padding=10)
+        source_frame = ttk.LabelFrame(root, text="ROM Source (.cue, .pbp and archives)", padding=10)
         source_frame.pack(fill=tk.X, expand=False)
 
         ttk.Label(source_frame, text="Source:").grid(row=0, column=0, sticky="w", padx=(0, 8))
@@ -140,22 +175,22 @@ class MainWindow(tk.Tk):
         destination_frame = ttk.LabelFrame(root, text="Destination", padding=10)
         destination_frame.pack(fill=tk.X, expand=False, pady=(10, 0))
 
+        ttk.Label(destination_frame, text="Destination folder:").grid(row=0, column=0, sticky="w")
+        self.destination_entry = ttk.Entry(destination_frame, textvariable=self.destination_path_var)
+        self.destination_entry.grid(row=0, column=1, sticky="ew")
+
+        self.select_destination_btn = ttk.Button(
+            destination_frame, text="Choose destination", command=self._select_destination
+        )
+        self.select_destination_btn.grid(row=0, column=2, padx=(8, 0))
+
         self.same_folder_check = ttk.Checkbutton(
             destination_frame,
             text="Save in the ROM's source folder",
             variable=self.same_folder_var,
             command=self._on_same_folder_toggle,
         )
-        self.same_folder_check.grid(row=0, column=0, sticky="w")
-
-        ttk.Label(destination_frame, text="Destination folder:").grid(row=1, column=0, sticky="w", pady=(8, 0))
-        self.destination_entry = ttk.Entry(destination_frame, textvariable=self.destination_path_var)
-        self.destination_entry.grid(row=1, column=1, sticky="ew", pady=(8, 0))
-
-        self.select_destination_btn = ttk.Button(
-            destination_frame, text="Choose destination", command=self._select_destination
-        )
-        self.select_destination_btn.grid(row=1, column=2, padx=(8, 0), pady=(8, 0))
+        self.same_folder_check.grid(row=1, column=0, sticky="w", pady=(8, 0))
 
         self.overwrite_check = ttk.Checkbutton(
             destination_frame,
@@ -163,14 +198,14 @@ class MainWindow(tk.Tk):
             variable=self.overwrite_var,
             command=self._on_overwrite_toggle,
         )
-        self.overwrite_check.grid(row=2, column=0, sticky="w", pady=(8, 0))
+        self.overwrite_check.grid(row=1, column=1, sticky="w", padx=(16, 0), pady=(8, 0))
 
         destination_frame.columnconfigure(1, weight=1)
 
         lists_frame = ttk.Panedwindow(root, orient=tk.HORIZONTAL)
         lists_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
 
-        compatible_frame = ttk.LabelFrame(lists_frame, text="Compatible ROMs (.cue + archives)", padding=10)
+        compatible_frame = ttk.LabelFrame(lists_frame, text="Compatible ROMs (.cue + .pbp + archives)", padding=10)
         ignored_frame = ttk.LabelFrame(lists_frame, text="Ignored / incompatible", padding=10)
         lists_frame.add(compatible_frame, weight=3)
         lists_frame.add(ignored_frame, weight=2)
@@ -180,7 +215,7 @@ class MainWindow(tk.Tk):
             columns=("name", "status", "path"),
             show="headings",
             selectmode="extended",
-            height=12,
+            height=8,
         )
         self.compatible_tree.heading("name", text="Game")
         self.compatible_tree.heading("status", text="Status")
@@ -201,7 +236,7 @@ class MainWindow(tk.Tk):
 
         ignored_columns = ("file", "reason")
         self.ignored_tree = ttk.Treeview(
-            ignored_frame, columns=ignored_columns, show="headings", selectmode="browse", height=12
+            ignored_frame, columns=ignored_columns, show="headings", selectmode="browse", height=8
         )
         self.ignored_tree.heading("file", text="File")
         self.ignored_tree.heading("reason", text="Reason")
@@ -251,8 +286,16 @@ class MainWindow(tk.Tk):
 
         progress_frame = ttk.LabelFrame(root, text="Progress", padding=10)
         progress_frame.pack(fill=tk.X, expand=False, pady=(10, 0))
+        progress_frame.configure(height=92)
+        progress_frame.pack_propagate(False)
 
-        self.progress_bar = ttk.Progressbar(progress_frame, mode="determinate", variable=self.progress_var, maximum=100.0)
+        self.progress_bar = ttk.Progressbar(
+            progress_frame,
+            mode="determinate",
+            variable=self.progress_var,
+            maximum=1.0,
+            style=self.progress_style_name,
+        )
         self.progress_bar.pack(fill=tk.X, expand=True)
         self.progress_label = ttk.Label(
             progress_frame,
@@ -261,18 +304,6 @@ class MainWindow(tk.Tk):
             wraplength=780,
         )
         self.progress_label.pack(anchor="w", fill=tk.X, pady=(6, 0))
-
-        log_frame = ttk.LabelFrame(root, text="Conversion log", padding=10)
-        log_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
-
-        self.log_text = tk.Text(log_frame, height=7, state=tk.DISABLED, wrap="word")
-        log_scroll = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
-        self.log_text.configure(yscrollcommand=log_scroll.set)
-        self.log_text.grid(row=0, column=0, sticky="nsew")
-        log_scroll.grid(row=0, column=1, sticky="ns")
-
-        log_frame.rowconfigure(0, weight=1)
-        log_frame.columnconfigure(0, weight=1)
 
     def _set_controls_enabled(self, enabled: bool) -> None:
         state = tk.NORMAL if enabled else tk.DISABLED
@@ -318,12 +349,13 @@ class MainWindow(tk.Tk):
 
     def _select_file(self) -> None:
         selected = filedialog.askopenfilename(
-            title="Choose a CUE or archive file",
+            title="Choose a CUE, PBP, or archive file",
             filetypes=[
                 (
                     "Supported",
                     (
                         "*.cue",
+                        "*.pbp",
                         "*.zip",
                         "*.7z",
                         "*.tar",
@@ -336,6 +368,7 @@ class MainWindow(tk.Tk):
                     ),
                 ),
                 ("CUE", "*.cue"),
+                ("PBP", "*.pbp"),
                 (
                     "Archives",
                     (
@@ -385,9 +418,10 @@ class MainWindow(tk.Tk):
         compatible_count = len(self.compatible_games)
         ignored_count = len(self.ignored_entries)
         archive_count = len([game for game in self.compatible_games if game.is_archive])
+        pbp_count = len([game for game in self.compatible_games if game.source_kind == "pbp"])
         self.summary_var.set(
-            "{0} compatible ROM(s). {1} supported archive(s). {2} ignored file(s).".format(
-                compatible_count, archive_count, ignored_count
+            "{0} compatible item(s). {1} supported archive(s). {2} PBP file(s). {3} ignored file(s).".format(
+                compatible_count, archive_count, pbp_count, ignored_count
             )
         )
         self._set_summary(self.summary_var.get(), color="#003B8E")
@@ -402,7 +436,7 @@ class MainWindow(tk.Tk):
         self.cue_to_item.clear()
 
         for game in self.compatible_games:
-            self._insert_game_row(game, status="Ready (archive)" if game.is_archive else "Ready")
+            self._insert_game_row(game, status=self._default_status_for_game(game))
 
     def _populate_ignored(self) -> None:
         self.ignored_tree.delete(*self.ignored_tree.get_children())
@@ -431,21 +465,27 @@ class MainWindow(tk.Tk):
             return "{0} -> {1}".format(game.archive_origin.name, game.cue_path.name)
         if game.is_archive:
             return "[archive] {0}".format(game.cue_path)
+        if game.source_kind == "pbp":
+            return "[pbp] {0}".format(game.cue_path)
         return str(game.cue_path)
+
+    def _default_status_for_game(self, game: Optional[CueGame]) -> str:
+        if game and game.is_archive:
+            return "Ready (archive)"
+        if game and game.source_kind == "pbp":
+            return "Ready (PBP)"
+        return "Ready"
 
     def _reset_statuses(self) -> None:
         for item in self.compatible_tree.get_children():
             game = self.item_to_game.get(item)
-            default_status = "Ready (archive)" if game and game.is_archive else "Ready"
+            default_status = self._default_status_for_game(game)
             self.compatible_tree.set(item, "status", default_status)
             self.compatible_tree.item(item, tags=("pending",))
-        self._stop_progress_animation()
         self.progress_current_step = 0
         self.progress_total_steps = 0
-        self.progress_animation_phase = 0.0
-        self.progress_animation_direction = 1.0
-        self.progress_var.set(0.0)
-        self.progress_text_var.set("Waiting for conversion...")
+        self._set_progress_values(current=0, total=0)
+        self.progress_text_var.set("0/0 (0%) - Waiting for conversion...")
 
     def _convert_selected(self) -> None:
         selected_items = self.compatible_tree.selection()
@@ -513,13 +553,11 @@ class MainWindow(tk.Tk):
         self._set_controls_enabled(False)
         self.progress_current_step = 0
         self.progress_total_steps = planned_total_steps
-        self.progress_animation_phase = 0.0
-        self.progress_animation_direction = 1.0
-        self.progress_var.set(0.0)
+        self._set_progress_values(current=0, total=planned_total_steps)
         if planned_total_steps > 0:
-            self.progress_text_var.set("0/{0} - Preparing conversion...".format(planned_total_steps))
+            self.progress_text_var.set("0/{0} (0%) - Preparing conversion...".format(planned_total_steps))
         else:
-            self.progress_text_var.set("Preparing conversion...")
+            self.progress_text_var.set("0/0 (0%) - Preparing conversion...")
         self._log("Planned progress steps: {0}".format(planned_total_steps))
 
         for game in games:
@@ -527,10 +565,12 @@ class MainWindow(tk.Tk):
         for archive_path in archive_paths:
             self._set_game_status(archive_path, "Queued")
 
-        if archive_paths:
+        pbp_count = len([game for game in games if game.source_kind == "pbp"])
+        cue_count = len(games) - pbp_count
+        if archive_paths or pbp_count:
             self._log(
-                "Starting conversion of {0} ROM(s) + extraction of {1} archive(s).".format(
-                    len(games), len(archive_paths)
+                "Starting conversion of {0} CUE ROM(s) + {1} PBP file(s) + extraction of {2} archive(s).".format(
+                    cue_count, pbp_count, len(archive_paths)
                 )
             )
         else:
@@ -541,7 +581,6 @@ class MainWindow(tk.Tk):
             daemon=True,
         )
         self.conversion_thread.start()
-        self._start_progress_animation()
         self.queue_drain_job = self.after(100, self._drain_worker_queue)
 
     def _worker_convert(
@@ -639,7 +678,7 @@ class MainWindow(tk.Tk):
                     extracted_game.archive_origin = archive_path.resolve()
                     extracted_game.extraction_dir = extracted_dir
                     games.append(extracted_game)
-                total_steps += len(extracted_games) * 2
+                total_steps += sum(self._steps_for_game(extracted_game) for extracted_game in extracted_games)
 
                 self.worker_queue.put(("status", str(archive_path), "Extracted"))
                 self.worker_queue.put(
@@ -658,7 +697,147 @@ class MainWindow(tk.Tk):
         canceled_count = 0
         canceled = False
 
+        prepared_games: List[CueGame] = []
+        pbp_workspace_root: Optional[Path] = None
+        pbp_sources = [game for game in games if game.source_kind == "pbp"]
+        if pbp_sources:
+            pbp_workspace_root = Path(tempfile.mkdtemp(prefix="cue-chd-pbp-"))
+            extracted_workspaces.append(pbp_workspace_root)
+            self.worker_queue.put(
+                (
+                    "log",
+                    "Extracting PBP before conversion ({0} file(s))...".format(len(pbp_sources)),
+                    None,
+                    None,
+                )
+            )
+
         for game in games:
+            if game.source_kind != "pbp":
+                prepared_games.append(game)
+                continue
+
+            status_anchor = self._status_anchor_path(game)
+            if self.cancel_event.is_set():
+                canceled = True
+                canceled_count += 1
+                self.worker_queue.put(("status", str(status_anchor), "Canceled"))
+                completed_steps += 3
+                self.worker_queue.put(("progress", completed_steps, total_steps, game.display_name))
+                continue
+
+            self.worker_queue.put(
+                ("progress", completed_steps, total_steps, "{0} (extracting PBP)".format(game.display_name))
+            )
+            self.worker_queue.put(("status", str(status_anchor), "Extracting"))
+            self.worker_queue.put(("log", "Extracting PBP: {0}".format(game.cue_path), None, None))
+            if pbp_workspace_root is None:
+                fail_count += 1
+                self.worker_queue.put(("status", str(status_anchor), "Failed"))
+                completed_steps += 3
+                self.worker_queue.put(("progress", completed_steps, total_steps, game.display_name))
+                self.worker_queue.put(("log", "PBP extraction workspace was not initialized", None, None))
+                continue
+
+            ok_pbp, pbp_dir, pbp_message = extract_pbp_to_workspace(
+                pbp_path=game.cue_path,
+                workspace_root=pbp_workspace_root,
+                psxtract_path=self.psxtract_path,
+            )
+            self.worker_queue.put(("log", pbp_message, None, None))
+            if not ok_pbp or not pbp_dir:
+                fail_count += 1
+                self.worker_queue.put(
+                    (
+                        "log",
+                        "[DETAILED ERROR] PBP extraction failed\n"
+                        "File: {0}\n"
+                        "Cause: {1}\n"
+                        "Suggestion: {2}".format(
+                            game.cue_path,
+                            pbp_message,
+                            self._pbp_failure_suggestion(pbp_message),
+                        ),
+                        None,
+                        None,
+                    )
+                )
+                self.worker_queue.put(("status", str(status_anchor), "Failed"))
+                completed_steps += 1
+                self.worker_queue.put(
+                    ("progress", completed_steps, total_steps, "{0} (PBP extraction failed)".format(game.display_name))
+                )
+                completed_steps += 1
+                self.worker_queue.put(
+                    ("progress", completed_steps, total_steps, "{0} (conversion skipped)".format(game.display_name))
+                )
+                completed_steps += 1
+                self.worker_queue.put(
+                    ("progress", completed_steps, total_steps, "{0} (verification skipped)".format(game.display_name))
+                )
+                continue
+
+            extracted_games, ignored_inside = scan_roms(pbp_dir, recursive=True)
+            extracted_games = [
+                extracted_game
+                for extracted_game in extracted_games
+                if not extracted_game.is_archive and extracted_game.source_kind == "cue"
+            ]
+            if not extracted_games:
+                fail_count += 1
+                ignored_preview = "; ".join(
+                    "{0}: {1}".format(item.path.name, item.reason) for item in ignored_inside[:5]
+                )
+                if not ignored_preview:
+                    ignored_preview = "No compatible item found"
+                self.worker_queue.put(
+                    (
+                        "log",
+                        "[DETAILED ERROR] Incompatible PBP extraction result\n"
+                        "File: {0}\n"
+                        "Cause: No valid .cue found after extraction\n"
+                        "Ignored items: {1}\n"
+                        "Examples: {2}".format(game.cue_path.name, len(ignored_inside), ignored_preview),
+                        None,
+                        None,
+                    )
+                )
+                self.worker_queue.put(("status", str(status_anchor), "Failed"))
+                completed_steps += 1
+                self.worker_queue.put(
+                    ("progress", completed_steps, total_steps, "{0} (PBP extraction invalid)".format(game.display_name))
+                )
+                completed_steps += 1
+                self.worker_queue.put(
+                    ("progress", completed_steps, total_steps, "{0} (conversion skipped)".format(game.display_name))
+                )
+                completed_steps += 1
+                self.worker_queue.put(
+                    ("progress", completed_steps, total_steps, "{0} (verification skipped)".format(game.display_name))
+                )
+                continue
+
+            extracted_game = extracted_games[0]
+            extracted_game.archive_origin = game.archive_origin.resolve() if game.archive_origin else game.cue_path.resolve()
+            extracted_game.extraction_dir = pbp_dir
+            prepared_games.append(extracted_game)
+            completed_steps += 1
+            self.worker_queue.put(("status", str(status_anchor), "Extracted"))
+            self.worker_queue.put(
+                (
+                    "log",
+                    "PBP extracted: {0} CUE file(s) found, using {1}".format(
+                        len(extracted_games), extracted_game.cue_path.name
+                    ),
+                    None,
+                    None,
+                )
+            )
+            self.worker_queue.put(
+                ("progress", completed_steps, total_steps, "{0} (PBP extracted)".format(game.display_name))
+            )
+
+        for game in prepared_games:
             status_anchor = self._status_anchor_path(game)
             if self.cancel_event.is_set():
                 canceled = True
@@ -669,7 +848,7 @@ class MainWindow(tk.Tk):
                 continue
 
             target_dir = self._resolve_output_dir(game, destination_root)
-            output_path = (target_dir / game.cue_path.with_suffix(".chd").name).resolve()
+            output_path = (target_dir / self._output_name_for_game(game)).resolve()
 
             self.worker_queue.put(
                 ("progress", completed_steps, total_steps, "{0} (converting)".format(game.display_name))
@@ -778,11 +957,14 @@ class MainWindow(tk.Tk):
             return
 
         done = False
-        while True:
+        processed = 0
+        max_events_per_tick = 250
+        while processed < max_events_per_tick:
             try:
                 event = self.worker_queue.get_nowait()
             except queue.Empty:
                 break
+            processed += 1
 
             try:
                 event_type = event[0]
@@ -808,15 +990,14 @@ class MainWindow(tk.Tk):
 
                     self.progress_current_step = max(0, completed_steps)
                     self.progress_total_steps = max(0, total_steps)
-                    self.progress_animation_phase = 0.0
-                    self.progress_animation_direction = 1.0
 
-                    percent = (float(completed_steps) / float(total_steps)) * 100.0 if total_steps else 0.0
-                    self.progress_var.set(percent)
+                    self._set_progress_values(current=completed_steps, total=total_steps)
                     if canceled:
                         self.progress_text_var.set(
-                            "Conversion canceled. {0}/{1} step(s) processed.".format(
-                                completed_steps, total_steps
+                            "Conversion canceled. {0}/{1} ({2:.0f}%) step(s) processed.".format(
+                                completed_steps,
+                                total_steps,
+                                self._current_progress_percent(),
                             )
                         )
                         self._log(
@@ -826,9 +1007,15 @@ class MainWindow(tk.Tk):
                         )
                     else:
                         if total_steps:
-                            self.progress_text_var.set("{0}/{1} step(s) completed.".format(completed_steps, total_steps))
+                            self.progress_text_var.set(
+                                "{0}/{1} ({2:.0f}%) step(s) completed.".format(
+                                    completed_steps,
+                                    total_steps,
+                                    self._current_progress_percent(),
+                                )
+                            )
                         else:
-                            self.progress_text_var.set("No ROM was processed.")
+                            self.progress_text_var.set("0/0 (0%) - No ROM was processed.")
                         self._log(
                             "Finished. Verified: {0} | Conversion failed: {1} | Extraction failed: {2}".format(
                                 success, failed, extraction_failed
@@ -848,74 +1035,25 @@ class MainWindow(tk.Tk):
 
         if done:
             self.queue_drain_job = None
-            self._stop_progress_animation()
             self.is_converting = False
             if not self.is_closing and self._is_window_alive():
                 self._set_controls_enabled(True)
             return
 
         if self.is_converting and not self.is_closing:
-            self.queue_drain_job = self.after(100, self._drain_worker_queue)
+            interval_ms = 20 if not self.worker_queue.empty() else 100
+            self.queue_drain_job = self.after(interval_ms, self._drain_worker_queue)
 
     def _update_progress(self, current: int, total: int, current_game: str) -> None:
         self.progress_current_step = max(0, int(current))
         self.progress_total_steps = max(0, int(total))
-        self.progress_animation_phase = 0.0
-        self.progress_animation_direction = 1.0
 
-        percent = (
-            (float(self.progress_current_step) / float(self.progress_total_steps)) * 100.0
-            if self.progress_total_steps
-            else 0.0
-        )
-        self.progress_var.set(percent)
-        self.progress_text_var.set("{0}/{1} - {2}".format(current, total, current_game))
-
-    def _start_progress_animation(self) -> None:
-        self._stop_progress_animation()
-        self._animate_progress_tick()
-
-    def _stop_progress_animation(self) -> None:
-        if self.progress_animation_job is not None:
-            try:
-                self.after_cancel(self.progress_animation_job)
-            except tk.TclError:
-                pass
-            self.progress_animation_job = None
-
-    def _animate_progress_tick(self) -> None:
-        self.progress_animation_job = None
-        if not self.is_converting:
-            return
-
-        total = self.progress_total_steps
-        current = self.progress_current_step
-        if total > 0:
-            current = max(0, min(current, total))
-            base = (float(current) / float(total)) * 100.0
-            if current < total:
-                next_percent = (float(current + 1) / float(total)) * 100.0
-                step_span = max(0.0, next_percent - base)
-                if step_span > 0.0:
-                    max_phase = max(0.08, min(step_span * 0.65, 1.5))
-                    phase_step = max(0.02, min(step_span * 0.16, 0.35))
-                    self.progress_animation_phase += self.progress_animation_direction * phase_step
-                    if self.progress_animation_phase >= max_phase:
-                        self.progress_animation_phase = max_phase
-                        self.progress_animation_direction = -1.0
-                    elif self.progress_animation_phase <= 0.0:
-                        self.progress_animation_phase = 0.0
-                        self.progress_animation_direction = 1.0
-
-                    animated = base + self.progress_animation_phase
-                    cap = max(base, next_percent - 0.03)
-                    self.progress_var.set(min(animated, cap))
-                else:
-                    self.progress_var.set(base)
-            else:
-                self.progress_var.set(base)
-
-        self.progress_animation_job = self.after(130, self._animate_progress_tick)
+        percent = self._set_progress_values(current=self.progress_current_step, total=self.progress_total_steps)
+        self.progress_text_var.set("{0}/{1} ({2:.0f}%) - {3}".format(current, total, percent, current_game))
+        try:
+            self.update_idletasks()
+        except tk.TclError:
+            pass
 
     def _on_window_resize(self, event: tk.Event) -> None:
         if event.widget is not self:
@@ -932,6 +1070,7 @@ class MainWindow(tk.Tk):
         status_tag = {
             "Ready": "pending",
             "Ready (archive)": "pending",
+            "Ready (PBP)": "pending",
             "Queued": "pending",
             "Converting": "running",
             "Verifying": "running",
@@ -1012,6 +1151,31 @@ class MainWindow(tk.Tk):
             self.estimate_label.configure(fg=color)
         except tk.TclError:
             pass
+
+    def _set_progress_values(self, current: int, total: int) -> float:
+        safe_total = max(0, int(total))
+        safe_current = max(0, int(current))
+        if safe_total > 0:
+            safe_current = min(safe_current, safe_total)
+
+        self.progress_bar.configure(maximum=float(max(1, safe_total)))
+        self.progress_var.set(float(safe_current))
+
+        percent = (float(safe_current) / float(safe_total)) * 100.0 if safe_total else 0.0
+        percent_text = "{0:.0f}%".format(percent)
+        self.progress_percent_var.set(percent_text)
+        try:
+            self.style.configure(self.progress_style_name, text=percent_text)
+        except tk.TclError:
+            pass
+        return percent
+
+    def _current_progress_percent(self) -> float:
+        total = max(0, int(self.progress_total_steps))
+        current = max(0, int(self.progress_current_step))
+        if total <= 0:
+            return 0.0
+        return (float(min(current, total)) / float(total)) * 100.0
 
     def _refresh_overall_estimate_preview(self) -> None:
         if not self.compatible_games:
@@ -1103,9 +1267,19 @@ class MainWindow(tk.Tk):
         return cue_games, archive_paths
 
     def _initial_total_steps(self, games: Sequence[CueGame], archive_paths: Sequence[Path]) -> int:
-        # Base plan: each archive contributes extraction (1 step) and each cue contributes
-        # conversion + verification (2 steps). Extracted cues discovered later expand this total.
-        return (len(games) * 2) + len(archive_paths)
+        # Base plan:
+        # - archive: extraction (1 step)
+        # - cue: conversion + verification (2 steps)
+        # - pbp: extraction + conversion + verification (3 steps)
+        total = len(archive_paths)
+        for game in games:
+            total += self._steps_for_game(game)
+        return total
+
+    def _steps_for_game(self, game: CueGame) -> int:
+        if game.source_kind == "pbp":
+            return 3
+        return 2
 
     def _resolve_output_dir(self, game: CueGame, destination_root: Optional[Path]) -> Path:
         if destination_root:
@@ -1114,10 +1288,32 @@ class MainWindow(tk.Tk):
             return game.archive_origin.parent
         return game.cue_path.parent
 
+    def _output_name_for_game(self, game: CueGame) -> str:
+        if game.archive_origin and game.archive_origin.suffix.lower() == ".pbp":
+            return game.archive_origin.with_suffix(".chd").name
+        return game.cue_path.with_suffix(".chd").name
+
     def _status_anchor_path(self, game: CueGame) -> Path:
         if game.archive_origin:
             return game.archive_origin.resolve()
         return game.cue_path.resolve()
+
+    def _pbp_failure_suggestion(self, message: str) -> str:
+        lowered = message.lower()
+        if "psxtract.exe was not found" in lowered:
+            return "Place psxtract.exe at tools\\psxtract\\psxtract.exe."
+        if (
+            "invalid 0x80 mac hash" in lowered
+            or "iso header decryption failed" in lowered
+            or "decryption failed" in lowered
+        ):
+            return (
+                "This PBP appears unsupported/encrypted for psxtract. "
+                "Try another PBP source (PSN-compatible) or pre-convert to BIN/CUE first."
+            )
+        if "no .cue was produced" in lowered:
+            return "Verify PBP format; psxtract may only support specific PSOne Classic EBOOT formats."
+        return "Verify PBP integrity and psxtract compatibility."
 
     def _apply_saved_geometry(self, geometry: str) -> None:
         try:
@@ -1162,7 +1358,7 @@ class MainWindow(tk.Tk):
         frame.rowconfigure(0, weight=1)
         frame.columnconfigure(0, weight=1)
 
-        existing_log = self.log_text.get("1.0", tk.END)
+        existing_log = "".join(self.log_lines)
         popup_text.configure(state=tk.NORMAL)
         popup_text.insert(tk.END, existing_log)
         popup_text.see(tk.END)
@@ -1179,9 +1375,7 @@ class MainWindow(tk.Tk):
         self.log_popup_text = None
 
     def _clear_log(self) -> None:
-        self.log_text.configure(state=tk.NORMAL)
-        self.log_text.delete("1.0", tk.END)
-        self.log_text.configure(state=tk.DISABLED)
+        self.log_lines.clear()
 
         if self.log_popup_text:
             try:
@@ -1251,7 +1445,6 @@ class MainWindow(tk.Tk):
             self.cancel_event.set()
 
         self.is_closing = True
-        self._stop_progress_animation()
         if self.queue_drain_job is not None:
             try:
                 self.after_cancel(self.queue_drain_job)
@@ -1268,12 +1461,7 @@ class MainWindow(tk.Tk):
             return
         timestamp = time.strftime("%H:%M:%S")
         prepared_lines = ["[{0}] {1}\n".format(timestamp, line) for line in message.splitlines()]
-
-        self.log_text.configure(state=tk.NORMAL)
-        for line in prepared_lines:
-            self.log_text.insert(tk.END, line)
-        self.log_text.see(tk.END)
-        self.log_text.configure(state=tk.DISABLED)
+        self.log_lines.extend(prepared_lines)
 
         if self.log_popup_text:
             try:
@@ -1290,17 +1478,6 @@ class MainWindow(tk.Tk):
 def run_app() -> None:
     app = MainWindow()
     app.mainloop()
-
-
-
-
-
-
-
-
-
-
-
 
 
 

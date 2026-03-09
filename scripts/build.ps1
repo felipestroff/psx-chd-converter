@@ -5,7 +5,9 @@ param(
     [switch]$FetchMame,
     [switch]$ForceMameRefresh,
     [switch]$Fetch7Zip,
-    [switch]$Force7ZipRefresh
+    [switch]$Force7ZipRefresh,
+    [switch]$FetchPsxtract,
+    [switch]$ForcePsxtractRefresh
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,7 +58,12 @@ function Invoke-WithCleanTlsEnv {
     }
 }
 
-if ($FetchMame) {
+$targetChdman = "tools\mame\chdman.exe"
+$chdmanMissing = -not (Test-Path $targetChdman)
+if ($FetchMame -or $chdmanMissing) {
+    if ($chdmanMissing -and -not $FetchMame) {
+        Write-Host "==> chdman.exe not found. Downloading automatically for full build"
+    }
     Write-Host "==> Updating chdman from the official MAME release"
     & "$PSScriptRoot\fetch-mame.ps1" -OutputDir "tools/mame" -Force:$ForceMameRefresh
     if ($LASTEXITCODE -ne 0) {
@@ -72,8 +79,21 @@ if ($FetchMame -or $Fetch7Zip) {
     }
 }
 
-if (-not (Test-Path "tools\mame\chdman.exe")) {
-    throw "chdman.exe was not found at tools\mame\chdman.exe. Use -FetchMame or copy it manually."
+$targetPsxtract = "tools\psxtract\psxtract.exe"
+$psxtractMissing = -not (Test-Path $targetPsxtract)
+if ($FetchMame -or $FetchPsxtract -or $psxtractMissing) {
+    if ($psxtractMissing -and -not ($FetchMame -or $FetchPsxtract)) {
+        Write-Host "==> psxtract.exe not found. Downloading automatically for full build"
+    }
+    Write-Host "==> Updating psxtract binary"
+    & "$PSScriptRoot\fetch-psxtract.ps1" -OutputDir "tools/psxtract" -Force:$ForcePsxtractRefresh
+    if ($LASTEXITCODE -ne 0) {
+        throw "Automatic psxtract update failed."
+    }
+}
+
+if (-not (Test-Path $targetChdman)) {
+    throw "chdman.exe was not found at tools\mame\chdman.exe. Automatic download failed; use -FetchMame or copy it manually."
 }
 
 Write-Host "==> Cleaning old build artifacts"

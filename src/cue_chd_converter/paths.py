@@ -25,3 +25,21 @@ def resolve_chdman_path() -> Path:
             return candidate
 
     return candidates[0]
+
+
+def get_psxtract_candidates() -> List[Path]:
+    base = get_app_base_dir()
+    return [
+        base / "tools" / "psxtract" / "psxtract.exe",
+        base / "tools" / "psxtract.exe",
+        base / "psxtract.exe",
+    ]
+
+
+def resolve_psxtract_path() -> Path:
+    candidates = get_psxtract_candidates()
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    return candidates[0]

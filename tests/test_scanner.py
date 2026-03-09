@@ -34,6 +34,19 @@ class ScannerTests(unittest.TestCase):
             self.assertEqual(archive_entries[0].cue_path.name, "collection.zip")
             self.assertEqual(len(ignored), 0)
 
+    def test_lists_pbp_as_compatible(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            pbp_path = root / "game.pbp"
+            pbp_path.write_bytes(b"PBP")
+
+            compatible, ignored = scan_roms(root)
+
+            pbp_entries = [entry for entry in compatible if entry.source_kind == "pbp"]
+            self.assertEqual(len(pbp_entries), 1)
+            self.assertEqual(pbp_entries[0].cue_path.name, "game.pbp")
+            self.assertEqual(len(ignored), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
